@@ -288,26 +288,3 @@ class LME:
             V = Z_split[i].dot(np.diag(self.gamma_soln)).dot(np.transpose(Z_split[i])) \
                 + self.delta_soln*np.identity(self.grouping[i])
             self.var_beta += np.transpose(X_split[i]).dot(np.linalg.inv(V)).dot(X_split[i])
-
-    # def postVarGlobal_naive(self):
-    #     assert self.k_beta > 0
-    #     if self.age_sex:
-    #         age_sex_mat = np.kron(np.identity(self.n_age*self.n_sex), np.ones((self.T,1)))
-    #         assert age_sex_mat.shape[0] == self.N//self.n_loc
-    #         assert age_sex_mat.shape[1] == self.n_age*self.n_sex
-    #         X = np.hstack((np.tile(age_sex_mat,(self.n_loc, 1)), self.X))
-    #     elif self.fix_intercept:
-    #         X = np.hstack((self.X, np.ones((self.N, 1))))
-    #     Z_split = np.split(self.Z,self.n_group)
-    #     u_vec = np.concatenate(self.u_soln)
-    #     assert u_vec.shape[0] == self.k_gamma*self.n_group
-    #     Z_block = np.zeros((self.N,self.k_gamma*self.n_group))
-    #     cs = np.insert(np.cumsum(self.grouping),0,0)
-    #     for i in range(self.n_group):
-    #         Z_block[cs[i]:cs[i+1],i*self.k_gamma:(i+1)*self.k_gamma] = Z_split[i]
-    #
-    #     V = Z_block.dot(np.diag(np.tile(self.gamma_soln,self.n_group))).dot(np.transpose(Z_block)) \
-    #         + self.delta_soln*np.identity(self.N)
-    #
-    #     self.var_beta = np.transpose(X).dot(np.linalg.inv(V)).dot(X)
-    #     assert self.var_beta.shape[0] == self.k_beta
