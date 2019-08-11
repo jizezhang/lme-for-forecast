@@ -1,5 +1,5 @@
 import sys
-path = '/Users/jizezhang/Dropbox (uwamath)/limetr.git/'
+path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
 sys.path.insert(0, path)
 from limetr import LimeTr
 import numpy as np
@@ -190,8 +190,10 @@ class LME:
         def jX(y):
             if self.age_sex:
                 return np.append(self.age_sex_jacob(y),np.transpose(self.X).dot(y))
-            else:
+            elif self.fix_intercept:
                 return np.insert(np.transpose(self.X).dot(y),0,np.sum(y))
+            else:
+                return np.transpose(self.X).dot(y)
 
         x0 = np.ones(k)*.1
         if var is not None:
@@ -246,6 +248,7 @@ class LME:
         for i in range(self.n_group):
             self.yfit.append(yfit_no_random_split[i] + Z_split[i].dot(self.u_soln[i]))
         self.yfit = np.concatenate(self.yfit)
+        self.model = model
 
     def postVarRandom(self):
         """
@@ -263,7 +266,7 @@ class LME:
         """
         y_k = X_k beta + Z_k u_k + epsilon, u has var_mat D, epsilon has var_mat R
 
-        Var(beta) = sum_k X_k' inv(Z_k*D*Z_k' + R) X_k
+        Var(beta) = inv( sum_k X_k' inv(Z_k*D*Z_k' + R) X_k )
 
         """
         assert self.k_beta > 0
@@ -271,6 +274,9 @@ class LME:
         Z_split = np.split(self.Z,self.n_group)
 
         self.var_beta = np.zeros((self.k_beta, self.k_beta))
+
+        if self.fix_intercept == True:
+            X_split = np.split(np.insert(self.X,0,1,axis=1), self.n_group)
 
         if self.age_sex == True:
             age_sex_mat = np.kron(np.identity(self.n_age*self.n_sex), np.ones((self.T,1)))
@@ -281,10 +287,13 @@ class LME:
                 for i in range(self.n_group):
                     m = i%self.n_age
                     X_split[i] = np.hstack((age_sex_mat[m*(self.T*self.n_sex):(m+1)*(self.T*self.n_sex),:],X_split[i]))
-        if self.fix_intercept == True:
-            X_split = np.split(np.insert(self.X,0,1,axis=1), self.n_group)
 
         for i in range(self.n_group):
             V = Z_split[i].dot(np.diag(self.gamma_soln)).dot(np.transpose(Z_split[i])) \
                 + self.delta_soln*np.identity(self.grouping[i])
             self.var_beta += np.transpose(X_split[i]).dot(np.linalg.inv(V)).dot(X_split[i])
+        self.var_beta = np.linalg.inv(self.var_beta)
+
+    def sampleGlobalWithLimeTr(self, sample_size=100):
+        beta_samples,_ = LimeTr.sampleSoln(self.model, sample_size=sample_size)
+        return beta_samples, np.mean(beta_samples,axis=0)
