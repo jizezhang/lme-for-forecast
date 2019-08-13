@@ -1,5 +1,5 @@
 import sys
-path = '/Users/jizezhang/Dropbox (uwamath)/limetr.git/'
+path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
 sys.path.insert(0, path)
 from limetr import LimeTr
 import numpy as np
@@ -276,3 +276,58 @@ class LME:
             self.yfit.append(yfit_no_random_split[i] + Z_split[i].dot(self.u_soln[i]))
         self.yfit = np.concatenate(self.yfit)
         self.model = model
+
+    def postVarRandom(self):
+        """
+        y_k = X_k beta + Z_k u_k + epsilon, u has var_mat D, epsilon has var_mat R
+
+        Var(u_k) = inv(inv(D) + Z_k'inv(R)Z_k)
+        """
+        assert len(self.ran_list) > 0 or len(self.ran_intercepts) > 0
+        Z_split = np.split(self.Z,self.n_groups)
+        self.var_u = []
+        for i in range(self.n_groups):
+            self.var_u.append(np.linalg.inv(np.diag(1./self.gamma_soln) +
+                               np.transpose(Z_split[i]).dot(Z_split[i])/self.delta_soln))
+
+    def postVarGlobal(self):
+        """
+        y_k = X_k beta + Z_k u_k + epsilon, u has var_mat D, epsilon has var_mat R
+
+        Var(beta) = inv( sum_k X_k' inv(Z_k*D*Z_k' + R) X_k )
+
+        """
+        assert self.k_beta > 0
+        Z_split = np.split(self.Z,self.n_groups)
+
+        self.var_beta = np.zeros((self.k_beta, self.k_beta))
+
+        X = np.zeros((self.N, self.k_beta))
+        start = 0
+
+        if self.global_intercept == True:
+            X[:,start] = np.ones(self.N)
+            start += 1
+
+        if len(self.global_ids) > 0:
+            for i in range(len(self.global_ids)):
+                ind = self.global_ids[i]
+                values, dims = self.covariates[ind]
+                assert values.shape[0] == np.prod(dims)
+                X[:,start] = rutils.repeat(values, dims, self.dimensions)
+                start += 1
+
+        if self.indicator != []:
+            X[:,start:] = rutils.kronecker(self.indicator, self.dimensions, 0)
+
+        X_split = np.split(X, self.n_groups)
+
+        for i in range(self.n_groups):
+            V = Z_split[i].dot(np.diag(self.gamma_soln)).dot(np.transpose(Z_split[i])) \
+                + self.delta_soln*np.identity(self.grouping[i])
+            self.var_beta += np.transpose(X_split[i]).dot(np.linalg.inv(V)).dot(X_split[i])
+        self.var_beta = np.linalg.inv(self.var_beta)
+
+    def sampleGlobalWithLimeTr(self, sample_size=100, max_iter=300):
+        beta_samples,gamma_samples = LimeTr.sampleSoln(self.model, sample_size=sample_size, max_iter=max_iter)
+        return beta_samples, gamma_samples
