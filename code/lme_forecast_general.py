@@ -1,9 +1,10 @@
 import sys
-path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
+path = '/Users/jizezhang/Dropbox (uwamath)/limetr.git/'
 sys.path.insert(0, path)
 from limetr import LimeTr
 import numpy as np
 import utils
+import repeat_utils as rutils
 import copy
 import time
 
@@ -17,7 +18,7 @@ class LME:
 
     def __init__(self, dimensions, n_grouping_dims, measurements, covariates,
                  indicator, global_ids, ran_list,
-                 global_intercept, ran_intercept):
+                 global_intercept, ran_intercepts):
 
         """
         Parameters:
@@ -58,15 +59,16 @@ class LME:
             (0,[n_age, 1, 1])
         global_intercept: boolean
             whether to use an intercept in global effects
-        ran_intercept: list
-            if not empty dimensions of random intercept excluding grouping dimensions
-            e.g. if grouping dimension is location, then
-            a random intercept in location would have input
-            [1, 1, 1]
+        ran_intercepts: list of lists
+            if not empty each element specifies dimensions of random intercept
+            excluding grouping dimensions
+            e.g. if grouping dimension is location, and random intercepts are
+            location-age and location-sex, then
+            [[n_age, 1, 1], [1,n_sex,1]]
         """
         self.dimensions = dimensions
         self.n_grouping_dims = n_grouping_dims
-        self.n_groups = np.prod(dimensions[:n_grouping_dims])
+        self.n_groups = int(np.prod(dimensions[:n_grouping_dims]))
         self.grouping = [np.prod(dimensions[n_grouping_dims:])]*self.n_groups
         self.Y = measurements
         self.N = self.Y.shape[0]
@@ -82,64 +84,11 @@ class LME:
         if indicator != []:
             self.k_beta += np.prod(indicator)
         self.ran_list = ran_list
-        self.ran_intercept = ran_intercept
+        self.ran_intercepts = ran_intercepts
         self.add_re = True
-        if self.ran_list == [] and self.ran_intercept == False:
+        if self.ran_list == [] and self.ran_intercepts == []:
             self.add_re = False
         return
-
-
-    def repeat(self,values,dims):
-        """
-        to compute function value
-        """
-        assert len(values) == np.prod(dims)
-        cumprod = 1
-        for i in range(self.nd-1,-1,-1):
-            if dims[i] == 1:
-                values = np.tile(values.reshape((-1,cumprod)),(1,self.dimensions[i])).reshape(-1)
-            cumprod *= self.dimensions[i]
-        assert values.shape[0] == self.N
-        return values
-
-    def repeatTranspose(self, y, dims):
-        """
-        to compute jacobian
-        """
-        values = [y]
-        for i in range(self.nd):
-            if dims[i] == 1:
-                values = [np.sum(x.reshape((self.dimensions[i],-1)),axis=0) for x in values]
-            else:
-                temp = []
-                for x in values:
-                    temp.extend(np.split(x, self.dimensions[i]))
-                values = temp
-        assert len(np.squeeze(values)) == np.prod(dims)
-        return np.squeeze(values)
-
-    def kronecker(self, dims):
-        """
-        build Z matrix using kronecker product
-        """
-        # def recurse(i):
-        #     if i == self.nd:
-        #         return [1]
-        #     if dims[i] == 1:
-        #         return np.tile(recurse(i+1),(self.dimensions[i],1))
-        #     else:
-        #         return np.kron(np.identity(self.dimensions[i]), recurse(i+1))
-        # Z = recurse(0)
-        Z = [1]
-        for i in range(len(dims)-1,-1,-1):
-            if dims[i] == 1:
-                Z = np.tile(Z,(self.dimensions[i+self.n_grouping_dims],1))
-            else:
-                Z = np.kron(np.identity(self.dimensions[i+self.n_grouping_dims]),Z)
-        assert Z.shape[0] == np.prod(self.dimensions[self.n_grouping_dims:])
-        assert Z.shape[1] == np.prod(dims)
-
-        return Z # element-wise product
 
     def X(self, beta, naive=False):
         assert len(beta) == self.k_beta
@@ -153,10 +102,10 @@ class LME:
                 ind = self.global_ids[i]
                 values, dims = self.covariates[ind]
                 assert values.shape[0] == np.prod(dims)
-                y += self.repeat(values, dims)*beta[start+i]
+                y += rutils.repeat(values, dims, self.dimensions)*beta[start+i]
             start += len(self.global_ids)
         if self.indicator != []:
-            y += self.repeat(beta[start:start + np.prod(self.indicator)],self.indicator)
+            y += rutils.repeat(beta[start:start + np.prod(self.indicator)],self.indicator, self.dimensions)
             start += np.prod(self.indicator)
         return y
 
@@ -169,28 +118,29 @@ class LME:
         if len(self.global_ids) > 0:
             for i in self.global_ids:
                 values, dims = self.covariates[i]
-                val.append(np.dot(values, self.repeatTranspose(y,dims)))
+                val.append(np.dot(values, rutils.repeatTranspose(y,dims, self.dimensions)))
         if self.indicator != []:
-            val.extend(self.repeatTranspose(y,self.indicator))
+            val.extend(rutils.repeatTranspose(y,self.indicator, self.dimensions))
         assert len(val) == self.k_beta
         return np.array(val)
 
     def buildZ(self):
         Z = []
         self.k_gamma = 0
-        if self.ran_intercept != []:
-            z = self.kronecker(self.ran_intercept)
-            self.k_gamma += 1
-            Z.append(np.tile(z,(self.n_groups, 1)))
+        if self.ran_intercepts != []:
+            for intercept in self.ran_intercepts:
+                z = rutils.kronecker(intercept, self.dimensions, self.n_grouping_dims)
+                Z.append(np.tile(z,(self.n_groups, 1)))
+            self.k_gamma += len(self.ran_intercepts)
         for ran in self.ran_list:
             id, dims = ran
-            values = self.repeat(self.covariates[id][0],self.covariates[id][1])
+            values = rutils.repeat(self.covariates[id][0],self.covariates[id][1], self.dimensions)
             assert len(dims) + self.n_grouping_dims == self.nd
             self.k_gamma += np.prod(dims)
-            Z.append(values.reshape((-1,1))*np.tile(self.kronecker(dims),(self.n_groups,1)))
+            Z.append(values.reshape((-1,1))*np.tile(rutils.kronecker(dims, self.dimensions, self.n_grouping_dims),(self.n_groups,1)))
 
         self.Z = np.hstack(Z)
-        print(self.Z.shape)
+        #print(self.Z.shape)
 
     def optimize(self, var=None, S=None, uprior=None, trim_percentage=0.0,
                  share_obs_std=True, fit_fixed=True,inner_print_level=5,
@@ -233,8 +183,8 @@ class LME:
 
         C = []
         start = self.k_beta
-        if self.ran_intercept:
-            start += 1
+        if self.ran_intercepts != []:
+            start += len(self.ran_intercepts)
         for ran in self.ran_list:
             _, dims = ran
             if np.prod(dims) > 1:
