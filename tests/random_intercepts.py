@@ -9,7 +9,7 @@ def random_intercepts():
     ran_intercepts = [[4,1,1],[1,3,1]]
 
     y = np.random.randn(np.prod(dimensions))
-    model = LME(dimensions, 1, y, [], [], [], [], True, ran_intercepts)
+    model = LME(dimensions, 1, y, [], [], [], [], True, [[True, False, False], [False, True, False]])
     Z = []
     Z.append(rutils.kronecker(ran_intercepts[0], dimensions, 1))
     Z.append(rutils.kronecker(ran_intercepts[1], dimensions, 1))

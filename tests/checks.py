@@ -3,7 +3,7 @@ import sys
 # add current directory
 sys.path.append('./')
 
-file_names = ['repeat_kron', 'indicator', 'random_intercepts']
+file_names = ['repeat_kron', 'indicators', 'random_intercepts']
 
 for name in file_names:
     glb = {}

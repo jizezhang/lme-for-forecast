@@ -8,17 +8,15 @@ import repeat_utils as rutils
 import copy
 import time
 
-
 ### TODO list
-# - add tests
-# - add examples
-# - include posterior variance function
+# - test draw()
+#
 
 class LME:
 
-    def __init__(self, dimensions, n_grouping_dims, measurements, covariates,
-                 indicator, global_ids, ran_list,
-                 global_intercept, ran_intercepts):
+    def __init__(self, dimensions, n_grouping_dims, y, covariates,
+                 indicators, global_effects_indices, random_effects_list,
+                 global_intercept, random_intercepts):
 
         """
         Parameters:
@@ -28,63 +26,100 @@ class LME:
             the length of the list is the # of dimensions
             the value of each component specifies the size of that dimension
             e.g. if the data has dimension location-age-sex-year, the list would
-            be [n_loc,n_age,n_sex,n_year]
+            be [n_loc,n_age,n_sex,n_year].
         n_grouping_dims: int
             the number of dimensions on which grouping occurs.
             takes the first `n_grouping_dims` from `dimensions`
             e.g. if `dimensions` is [n_loc,n_age,n_sex,n_year] and
             `n_grouping_dims` is 1, then the data will be grouped by location,
             and the Z matrix corresponding to random effects will be a block
-            diagonal matrix with n_loc number of blocks
-        measurements: numpy array
-            measurement values, must be ordered according to the `dimensions`
+            diagonal matrix with `n_loc` number of blocks
+        y: 1D numpy array
+            y (dependent variable) values, must be ordered according to the `dimensions`
             e.g. if `dimensions` is [n_loc,n_age,n_sex,n_year],
-            then measurements must be ordered by location, age, sex, year.
+            then y must be ordered by location, age, sex, year.
         covariates: list of tuples
-            each element of the list is a tuple of (numpy.array, dimensions_of_cov)
+            each element of the list is a tuple of (1D numpy.array, dimensions_of_cov)
+            where the dimensions of covriate is specified through a boolean list,
+            corresponding to `dimensions`.
             e.g. for HAQ, the tuple would be
-            (values_of_haq, [n_loc, 1, 1, n_year])
-            since HAQ does not depend on age and sex
-        indicator: list
-            dimensions on which to use indicator
+            (values_of_haq, [True, False, False, True])
+            since HAQ does not depend on age and sex.
+        indicators: list of lists
+            each element is a boolean list specifying dimensions on which to use indicator
             e.g. if age-sex indicator, the list would be
-            [1, n_age, n_sex, 1]
-        global_ids: list
-            ids for covariates that will be used as global effects
-        ran_list: list of tuples
+            [[False, True, True, False]]
+            if there is an age indicator and a sex indicator, the list would be
+            [[False, True, False, False], [False, False, True, False]]
+        global_effects_indices: list
+            indices for covariates that will be used as global effects
+        random_effects_list: list of tuples
             each element of the list is a tuple of
             (id_of_cov, dimensions_of_random_effects_excluding_grouping_dimensions)
             e.g. if we want to know random slope of covariate id=0 per location-age,
             and the grouping dimension is location, then the tuple would be
-            (0,[n_age, 1, 1])
+            (0,[True, False, False])
         global_intercept: boolean
             whether to use an intercept in global effects
-        ran_intercepts: list of lists
+        random_intercepts: list of lists
             if not empty each element specifies dimensions of random intercept
-            excluding grouping dimensions
+            excluding grouping dimensions, through a boolean list
             e.g. if grouping dimension is location, and random intercepts are
             location-age and location-sex, then
-            [[n_age, 1, 1], [1,n_sex,1]]
+            [[True, False, False], [False, True, False]]
         """
         self.dimensions = dimensions
         self.n_grouping_dims = n_grouping_dims
         self.n_groups = int(np.prod(dimensions[:n_grouping_dims]))
         self.grouping = [np.prod(dimensions[n_grouping_dims:])]*self.n_groups
-        self.Y = measurements
+        self.Y = y
         self.N = self.Y.shape[0]
         self.nd = len(dimensions)
         assert self.N == np.prod(self.dimensions)
         assert self.N == sum(self.grouping)
+
+        for cov in covariates:
+            assert len(cov[1]) == self.nd
+            for i in range(self.nd):
+                if cov[1][i] == True:
+                    cov[1][i] = self.dimensions[i]
+                else:
+                    cov[1][i] = 1
+            #assert len(vals) == np.prod(cov[1])
         self.covariates = covariates
-        assert not (global_intercept and indicator != [])
-        self.global_ids = global_ids
-        self.indicator = indicator
+
+        assert not (global_intercept and indicators != [])
+
+        self.global_ids = global_effects_indices
         self.global_intercept = global_intercept
-        self.k_beta = len(global_ids) + int(global_intercept)
-        if indicator != []:
-            self.k_beta += np.prod(indicator)
-        self.ran_list = ran_list
-        self.ran_intercepts = ran_intercepts
+        self.k_beta = len(self.global_ids) + int(self.global_intercept)
+        for ind in indicators:
+            assert len(ind) == self.nd
+            for i in range(self.nd):
+                if ind[i] == True:
+                    ind[i] = self.dimensions[i]
+                else:
+                    ind[i] = 1
+            self.k_beta += np.prod(ind)
+        self.indicators = indicators
+
+        for ran_eff in random_effects_list:
+            assert len(ran_eff[1]) + self.n_grouping_dims == self.nd
+            for i in range(len(ran_eff[1])):
+                if ran_eff[1][i] == True:
+                    ran_eff[1][i] = self.dimensions[self.n_grouping_dims + i]
+                else:
+                    ran_eff[1][i] = 1
+        self.ran_list = random_effects_list
+
+        for ran_inter in random_intercepts:
+            assert len(ran_inter) + self.n_grouping_dims == self.nd
+            for i in range(len(ran_inter)):
+                if ran_inter[i] == True:
+                    ran_inter[i] = self.dimensions[self.n_grouping_dims + i]
+                else:
+                    ran_inter[i] = 1
+        self.ran_intercepts = random_intercepts
         self.add_re = True
         if self.ran_list == [] and self.ran_intercepts == []:
             self.add_re = False
@@ -97,16 +132,15 @@ class LME:
         if self.global_intercept:
             y += beta[start]
             start += 1
-        if len(self.global_ids) > 0:
-            for i in range(len(self.global_ids)):
-                ind = self.global_ids[i]
-                values, dims = self.covariates[ind]
-                assert values.shape[0] == np.prod(dims)
-                y += rutils.repeat(values, dims, self.dimensions)*beta[start+i]
-            start += len(self.global_ids)
-        if self.indicator != []:
-            y += rutils.repeat(beta[start:start + np.prod(self.indicator)],self.indicator, self.dimensions)
-            start += np.prod(self.indicator)
+        for i in range(len(self.global_ids)):
+            ind = self.global_ids[i]
+            values, dims = self.covariates[ind]
+            assert values.shape[0] == np.prod(dims)
+            y += rutils.repeat(values, dims, self.dimensions)*beta[start+i]
+        start += len(self.global_ids)
+        for indicator in self.indicators:
+            y += rutils.repeat(beta[start:start + np.prod(indicator)],indicator, self.dimensions)
+            start += np.prod(indicator)
         return y
 
     def XT(self, y):
@@ -115,12 +149,12 @@ class LME:
         val = []
         if self.global_intercept:
             val.append(np.sum(y))
-        if len(self.global_ids) > 0:
-            for i in self.global_ids:
-                values, dims = self.covariates[i]
-                val.append(np.dot(values, rutils.repeatTranspose(y,dims, self.dimensions)))
-        if self.indicator != []:
-            val.extend(rutils.repeatTranspose(y,self.indicator, self.dimensions))
+
+        for i in self.global_ids:
+            values, dims = self.covariates[i]
+            val.append(np.dot(values, rutils.repeatTranspose(y,dims, self.dimensions)))
+        for indicator in self.indicators:
+            val.extend(rutils.repeatTranspose(y, indicator, self.dimensions))
         assert len(val) == self.k_beta
         return np.array(val)
 
@@ -309,16 +343,16 @@ class LME:
             X[:,start] = np.ones(self.N)
             start += 1
 
-        if len(self.global_ids) > 0:
-            for i in range(len(self.global_ids)):
-                ind = self.global_ids[i]
-                values, dims = self.covariates[ind]
-                assert values.shape[0] == np.prod(dims)
-                X[:,start] = rutils.repeat(values, dims, self.dimensions)
-                start += 1
+        for i in range(len(self.global_ids)):
+            ind = self.global_ids[i]
+            values, dims = self.covariates[ind]
+            assert values.shape[0] == np.prod(dims)
+            X[:,start] = rutils.repeat(values, dims, self.dimensions)
+            start += 1
 
-        if self.indicator != []:
-            X[:,start:] = rutils.kronecker(self.indicator, self.dimensions, 0)
+        for indicator in self.indicators:
+            X[:,start:start + np.prod(indicator)] = rutils.kronecker(indicator, self.dimensions, 0)
+            start += np.prod(indicator)
 
         X_split = np.split(X, self.n_groups)
 
@@ -331,3 +365,23 @@ class LME:
     def sampleGlobalWithLimeTr(self, sample_size=100, max_iter=300):
         beta_samples,gamma_samples = LimeTr.sampleSoln(self.model, sample_size=sample_size, max_iter=max_iter)
         return beta_samples, gamma_samples
+
+    def draw(self, n_draws=10):
+        beta_samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
+        u_samples = [[] for _ in range(len(self.ran_intercepts) + len(self.ran_list))]
+        for i in range(self.n_groups):
+            samples = np.random.multivariate_normal(self.u_soln[i], self.var_u[i], n_draws)
+            start = 0
+            j = 0
+            for intercept in self.ran_intercepts:
+                u_samples[j].append(np.transpose(samples[:,start:start + np.prod(intercept)].reshape((n_draws, -1))))
+                start += np.prod(intercept)
+                j += 1
+            for ran_eff in self.ran_list:
+                dims = ran_eff[1]
+                u_samples[j].append(np.transpose(samples[:,start:start + np.prod(dims)].reshape((n_draws,-1))))
+                start += np.prod(dims)
+                j += 1
+        for i in range(len(u_samples)):
+            u_samples[i] = np.array([x.tolist() for x in u_samples[i]]).squeeze()
+        return beta_samples, u_samples

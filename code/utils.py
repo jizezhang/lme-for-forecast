@@ -1,26 +1,25 @@
 import numpy as np
+import xarray
 
+def saveDraws(beta_samples, u_samples, global_effects_names,
+              random_effects_dims, random_effects_names):
+    all_coords = {}
+    assert beta_samples.shape[0] == len(global_effects_names)
+    beta_xr = xarray.DataArray(beta_samples, dims=('cov','draw'),
+                               coords={'cov': global_effects_names,
+                                       'draw': np.arange(1, beta_samples.shape[1]+1)})
+    all_coords.update({'cov': global_effects_names,
+            'draw': np.arange(1, beta_samples.shape[1]+1)})
+    assert len(u_samples) == len(random_effects_dims)
+    u_xrs = []
+    for i in range(len(u_samples)):
+        dim_names = random_effects_dims[i] + ['draw']
+        dim_sizes = u_samples[i].shape
+        assert len(dim_names) == len(dim_sizes)
+        coords = {dim_names[j]:np.arange(1, dim_sizes[j]+1) for j in range(len(dim_names))}
+        all_coords.update(coords)
+        u_xrs.append(xarray.DataArray(u_samples[i], dims=tuple(dim_names), coords=coords))
+    data_vars = {random_effects_names[i]:u_xrs[i] for i in range(len(random_effects_names))}
+    data_vars['beta_global'] = beta_xr
 
-def readDataset(ds,n_year=28, n_sex=2, n_age=23, n_loc=195, check=False):
-    ds = ds.sortby(['location_id','age_group_id','sex_id','year_id'])
-    values_check = []
-    if check:
-        df = ds.to_dataframe().sort_values(['location_id','age_group_id','sex_id','year_id'])
-        values_check = df['value'].values
-    values = ds.transpose('location_id','age_group_id','sex_id','year_id').to_array().values.squeeze().reshape(-1)
-    if check:
-        assert np.linalg.norm(values - values_check) == 0.0
-    if len(ds.year_id.values) == 1:
-        print('number of years == 1')
-        values = np.repeat(values,n_year)
-    if len(ds.sex_id.values) == 1:
-        print('number of sexes == 1')
-        values = np.tile(values.reshape((-1,n_year)),(1,n_sex)).reshape(-1)
-    if len(ds.age_group_id.values) == 1:
-        print('number of age groups == 1')
-        values = np.tile(values.reshape((-1,n_year*n_sex)),(1,n_age)).reshape(-1)
-    if len(ds.location_id.values) == 1:
-        print('number of locations == 1')
-        values = np.tile(values,n_loc)
-    assert values.shape[0] == n_year*n_sex*n_age*n_loc
-    return values
+    return xarray.Dataset(data_vars, all_coords)
