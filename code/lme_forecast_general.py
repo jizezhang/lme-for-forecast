@@ -374,14 +374,23 @@ class LME:
             start = 0
             j = 0
             for intercept in self.ran_intercepts:
-                u_samples[j].append(np.transpose(samples[:,start:start + np.prod(intercept)].reshape((n_draws, -1))))
+                u_samples[j].append(samples[:,start:start + np.prod(intercept)].reshape((n_draws, -1)))
                 start += np.prod(intercept)
                 j += 1
             for ran_eff in self.ran_list:
                 dims = ran_eff[1]
-                u_samples[j].append(np.transpose(samples[:,start:start + np.prod(dims)].reshape((n_draws,-1))))
+                u_samples[j].append(samples[:,start:start + np.prod(dims)].reshape((n_draws,-1)))
                 start += np.prod(dims)
                 j += 1
         for i in range(len(u_samples)):
-            u_samples[i] = np.array([x.tolist() for x in u_samples[i]]).squeeze()
+            u_samples[i] = np.transpose(np.hstack(u_samples[i]))
+        i = 0
+        for intercept in self.ran_intercepts:
+            u_samples[i] = u_samples[i].reshape(tuple(self.dimensions[:self.n_grouping_dims] + intercept +[n_draws])).squeeze()
+            i += 1
+        for ran_eff in self.ran_list:
+            _, dims = ran_eff
+            u_samples[i] = u_samples[i].reshape(tuple(self.dimensions[:self.n_grouping_dims] + dims +[n_draws])).squeeze()
+            i += 1
+
         return beta_samples, u_samples
