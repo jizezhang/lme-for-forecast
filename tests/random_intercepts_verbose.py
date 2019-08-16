@@ -1,7 +1,7 @@
-def random_intercepts():
+def random_intercepts_verbose():
     import sys
     sys.path.insert(0, '../code/')
-    from lme_forecast_general import LME
+    from lme_forecast_verbose import LME
     import repeat_utils as rutils
     import numpy as np
 
@@ -9,8 +9,8 @@ def random_intercepts():
     ran_intercepts = [[4,1,1],[1,3,1]]
 
     y = np.random.randn(np.prod(dimensions))
-    model = LME(dimensions, 1, y, [], [], [], True,
-               [(None, [True, True, False, False]), (None, [True, False, True, False])])
+    model = LME(dimensions, 1, y, {}, {}, [], True,
+               {'intercept1':[True, True, False, False], 'intercept2':[True, False, True, False]})
     Z = []
     Z.append(rutils.kronecker(ran_intercepts[0], dimensions, 1))
     Z.append(rutils.kronecker(ran_intercepts[1], dimensions, 1))

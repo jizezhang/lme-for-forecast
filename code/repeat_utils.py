@@ -29,7 +29,7 @@ def repeatTranspose(y, dims, full_dims):
     assert len(np.squeeze(values)) == np.prod(dims)
     return np.squeeze(values)
 
-def kronecker(dims, full_dims, start):
+def kronecker(dims, full_dims, start=0):
     """
     build Z matrix using kronecker product
     """

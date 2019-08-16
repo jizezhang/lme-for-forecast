@@ -15,7 +15,7 @@ import time
 class LME:
 
     def __init__(self, dimensions, n_grouping_dims, y, covariates,
-                 indicators, global_effects_indices,
+                 indicators, global_effects_names,
                  global_intercept, random_effects_list):
 
         """
@@ -38,31 +38,36 @@ class LME:
             y (dependent variable) values, must be ordered according to the `dimensions`
             e.g. if `dimensions` is [n_loc,n_age,n_sex,n_year],
             then y must be ordered by location, age, sex, year.
-        covariates: list of tuples
-            each element of the list is a tuple of (1D numpy.array, dimensions_of_cov)
+        covariates: dictionary
+            key is the name of the covariate, value is a tuple of
+            (1D numpy.array, dimensions_of_cov)
             where the dimensions of covriate is specified through a boolean list,
             corresponding to `dimensions`.
             e.g. for HAQ, the tuple would be
             (values_of_haq, [True, False, False, True])
             since HAQ does not depend on age and sex.
-        indicators: list of lists
-            each element is a boolean list specifying dimensions on which to use indicator
-            e.g. if age-sex indicator, the list would be
-            [[False, True, True, False]]
-            if there is an age indicator and a sex indicator, the list would be
-            [[False, True, False, False], [False, False, True, False]]
-        global_effects_indices: list
-            indices for covariates that will be used as global effects
+            The dictionary would look like
+            {'haq': (values_of_haq, [True, False, False, True)}
+        indicators: dictionary
+            key is the name of indicator, value is a boolean list
+            specifying dimensions on which to use indicator
+            e.g. if age-sex indicator, dictionary would be
+            {'ind_age-sex':[False, True, True, False]}
+            if there is an age indicator and a sex indicator, it would be
+            {'ind_age':[False, True, False, False], 'ind_sex':[False, False, True, False]}
+        global_effects_names: list of str
+            names of covariates that will be used as global effects
         global_intercept: boolean
             whether to use an intercept in global effects
-        random_effects_list: list of tuples
-            each element of the list is a tuple of
-            (id_of_cov, dimensions_of_random_effects_excluding_grouping_dimensions)
+        random_effects_list: dictionary
+            key is the name of covariate or intercept, value is a boolean list
+            specifying dimensions on which to impose random effects
             e.g. if we want to know random slope of covariate id=0 per location-age,
-            (0,[True, True, False, False])
-            if we want to add a random intercept, then the first component of the tuple
-            should be None. e.g. for an intercept on location, pass in
-            (None, [True, False, False, False])
+            { 'haq': [True, True, False, False]}
+            if we want to add a random intercept on location, then
+            { 'haq': [True, True, False, False], 'intercept_loc': [True, False, False, False]}
+            Any name that does not appear in `covariates` will be interpreted as
+            name for intercept.
             Note that the first `n_grouping_dims` of the boolean list must always
             be True for all random effects
         """
@@ -81,27 +86,39 @@ class LME:
             for i in range(self.nd):
                 b[i] = max(1, int(b[i])*self.dimensions[i])
 
-        for cov in covariates:
-            assert len(cov) == 2
-            bool_to_size(cov[1])
-            assert len(cov[0]) == np.prod(cov[1])
-        self.covariates = covariates
 
-        assert not (global_intercept and indicators != [])
+        self.covariates = []
+        self.cov_name_to_id = {}
+        i = 0
+        for name, pair in covariates.items():
+            assert len(pair) == 2
+            bool_to_size(pair[1])
+            assert len(pair[0]) == np.prod(pair[1])
+            self.covariates.append(pair)
+            self.cov_name_to_id[name] = i
+            i += 1
 
-        self.global_ids = global_effects_indices
+        assert not (global_intercept and indicators != {})
+        self.global_ids = [self.cov_name_to_id[name] for name in global_effects_names]
         self.global_intercept = global_intercept
         self.k_beta = len(self.global_ids) + int(self.global_intercept)
-        for ind in indicators:
+        self.indicators = []
+        self.indicator_name_to_id = {}
+        i = 0
+        for name, ind in indicators.items():
             bool_to_size(ind)
             self.k_beta += np.prod(ind)
-        self.indicators = indicators
-
-        for ran_eff in random_effects_list:
-            assert len(ran_eff) == 2
-            assert all(ran_eff[1][:self.n_grouping_dims])
-            bool_to_size(ran_eff[1])
-        self.ran_list = random_effects_list
+            self.indicators.append(ind)
+            self.indicator_name_to_id[name] = i
+            i += 1
+        self.ran_list = []
+        for name, ran_eff in random_effects_list.items():
+            assert all(ran_eff[:self.n_grouping_dims])
+            bool_to_size(ran_eff)
+            if name in self.cov_name_to_id:
+                self.ran_list.append((self.cov_name_to_id[name], ran_eff))
+            else:
+                self.ran_list.append((None, ran_eff))
 
         self.add_re = True
         if self.ran_list == []:
