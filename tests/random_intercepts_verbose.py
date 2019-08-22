@@ -1,8 +1,6 @@
 def random_intercepts_verbose():
-    import sys
-    sys.path.insert(0, '../code/')
-    from lme_forecast_verbose import LME
-    import repeat_utils as rutils
+    from lme.lme_forecast_verbose import LME
+    import lme.rutils as rutils
     import numpy as np
 
     dimensions = [5, 4, 3, 2]

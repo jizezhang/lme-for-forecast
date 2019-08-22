@@ -1,8 +1,8 @@
 def random_intercepts():
     import sys
-    sys.path.insert(0, '../code/')
+    sys.path.insert(0, '../lme/')
     from lme_forecast_general import LME
-    import repeat_utils as rutils
+    import rutils
     import numpy as np
 
     dimensions = [5, 4, 3, 2]

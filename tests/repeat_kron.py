@@ -1,8 +1,6 @@
 def repeat_kron():
-    import sys
-    sys.path.insert(0, '../code/')
     import numpy as np
-    import repeat_utils as rutils
+    import lme.rutils as rutils
 
     full_dims = [5,4,3,2]
     dims = [1,4,1,2]

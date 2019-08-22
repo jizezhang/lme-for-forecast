@@ -3,68 +3,124 @@ path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
 sys.path.insert(0, path)
 from limetr import LimeTr
 import numpy as np
-import utils
-import repeat_utils as rutils
+import lme.utils as utils
+import lme.rutils as rutils
 import copy
 import time
 
 ### TODO list
 # - test draw()
-#
 
 class LME:
 
     def __init__(self, dimensions, n_grouping_dims, y, covariates,
-                 indicators, global_effects_indices,
-                 global_intercept, random_effects_list):
+                 indicators, global_effects_names,
+                 global_intercept, random_effects):
 
         """
-        Parameters:
-        ----------
-        dimensions: list
-            dimensions of the data
-            the length of the list is the # of dimensions
-            the value of each component specifies the size of that dimension
-            e.g. if the data has dimension location-age-sex-year, the list would
-            be [n_loc,n_age,n_sex,n_year].
-        n_grouping_dims: int
-            the number of dimensions on which grouping occurs.
-            takes the first `n_grouping_dims` from `dimensions`
-            e.g. if `dimensions` is [n_loc,n_age,n_sex,n_year] and
-            `n_grouping_dims` is 1, then the data will be grouped by location,
-            and the Z matrix corresponding to random effects will be a block
-            diagonal matrix with `n_loc` number of blocks
-        y: 1D numpy array
-            y (dependent variable) values, must be ordered according to the `dimensions`
-            e.g. if `dimensions` is [n_loc,n_age,n_sex,n_year],
-            then y must be ordered by location, age, sex, year.
-        covariates: list of tuples
-            each element of the list is a tuple of (1D numpy.array, dimensions_of_cov)
-            where the dimensions of covriate is specified through a boolean list,
-            corresponding to `dimensions`.
-            e.g. for HAQ, the tuple would be
-            (values_of_haq, [True, False, False, True])
-            since HAQ does not depend on age and sex.
-        indicators: list of lists
-            each element is a boolean list specifying dimensions on which to use indicator
-            e.g. if age-sex indicator, the list would be
-            [[False, True, True, False]]
-            if there is an age indicator and a sex indicator, the list would be
-            [[False, True, False, False], [False, False, True, False]]
-        global_effects_indices: list
-            indices for covariates that will be used as global effects
-        global_intercept: boolean
-            whether to use an intercept in global effects
-        random_effects_list: list of tuples
-            each element of the list is a tuple of
-            (id_of_cov, dimensions_of_random_effects_excluding_grouping_dimensions)
-            e.g. if we want to know random slope of covariate id=0 per location-age,
-            (0,[True, True, False, False])
-            if we want to add a random intercept, then the first component of the tuple
-            should be None. e.g. for an intercept on location, pass in
-            (None, [True, False, False, False])
-            Note that the first `n_grouping_dims` of the boolean list must always
-            be True for all random effects
+        Create a linear mixed effects model (LME) object
+
+        .. math::
+            {\bf y} = \beta_0 + X {\bf \beta_c} + K{\bf \beta_I} + Z \{bf u} + \epsilon
+
+        where
+            :math:`\beta_0` is a global intercept.
+            :math:`X` is a matrix for global effects covariates.
+            :math:`\beta_c` is a vector of covariate coefficients.
+            :math:`K` is a matrix representing indicator functions
+                (more details later).
+            :math:`\beta_I` is a vector of indicator coefficients.
+            :math:`Z` is a matrix of random effects terms (including
+                      random effects covariates and random intercepts).
+            :math:`u` is a vector of random effects coefficients. :math:`u` is
+                      assumed to follow :math:`N(0, \Tau)` where :math:`\Tau` is
+                      a diagonal matrix.
+            :math:`\epsilon` is a vector of measurement noise terms.
+                :math:`\epsilon` is assumed to follow :math:`N(0, \Sigma)`
+                where :math:`\Sigma` is a diagonal matrix.
+
+        To summarize, the fixed effects variables are
+        .. math::
+            `\beta_0, \beta_c, \beta_I, \text{diag}(\Tau), \text{diag}(\Sigma)`
+        and the random effects variable is :math:`u`.
+
+        This implementation of LME is designed for input data, including
+        measurements data, covariates data, etc., that are organized by a
+        certain set of dimensions, e.g. location-age-sex-year. The aforementioned
+        indicator functions are indicator over sets defined by a single dimension
+        or cartesian product of dimensions. For instance, the sets can be defined
+        by locations, i.e. data entries from the same location belong to the one
+        set, and the number of sets will be equal to the number of locations.
+        The length of :math:`\beta_I` will be equal to the number of sets.
+        The sets can also be defined by location-age, i.e. data entries from
+        the same location and the same age group belong to one set. In this case
+        the number of sets is equal to the number of locations times the number
+        of age groups.
+
+        Because of the special structure of input data, the matrices
+        :math:`X, K` and their Jacobians are not formed explicitly in the
+        implementation, in order to reduce memory usage and to speed up
+        computation. :math:`Z` matrix is also not formed in its full dimensions.
+        Instead we only pass in its diagonal blocks, since it should have a
+        block diagonal structure in general.
+
+        The underlying core optimization engine for this program is `LimeTr`,
+        which can handle a more general class of linear mixed effects models with
+        built-in robust outlier detection methods.
+
+        Args:
+            dimensions (list[int]):
+                a list specifying dimensions of data. The value of each component
+                specifies the size of that dimension, e.g. if the data has
+                dimension location-age-sex-year, the list would
+                be [n_loc, n_age, n_sex, n_year].
+            n_grouping_dims (int):
+                an int specifying the number of dimensions on which grouping occurs,
+                e.g. if ``dimensions`` is [n_loc,n_age,n_sex,n_year] and
+                `n_grouping_dims` is 2, then the data will be grouped by location
+                and age, and the :math:`Z` matrix corresponding to random effects
+                will be a block diagonal matrix with ``n_loc`` times ``n_age``
+                number of blocks.
+            y (numpy.ndarray):
+                One-dimensional array storing ``y`` (dependent variable) values,
+                and the values must be ordered according to the ``dimensions``,
+                e.g. if ``dimensions`` is [n_loc,n_age,n_sex,n_year],
+                then ``y`` must be ordered by location, age, sex, year.
+            covariates (dict of str: (numpy.ndarray, list[boolean])):
+                A mapping that stores info of covariates. Key is the name of
+                the covariate, and value is a tuple where the first component is
+                a one-dimensional array that stores values of that covariate, and
+                the second component specifies the dimensions of covriate
+                through a boolean list, e.g. for HAQ, the tuple would be
+                (values_of_haq, [True, False, False, True])
+                since HAQ does not depend on age and sex.
+                The dictionary would look like
+                {'haq': (values_of_haq, [True, False, False, True)}
+            indicators(dict of str: list[boolean]):
+                A mapping for indicators.
+                Key is the name of indicator, value is a boolean list that specifies
+                dimensions on which to use indicators, e.g. if age-sex indicator,
+                dictionary would be
+                {'ind_age-sex':[False, True, True, False]}, and
+                if there is an age indicator and a sex indicator, it would be
+                {'ind_age':[False, True, False, False],
+                 'ind_sex':[False, False, True, False]}
+            global_effects_names (list[str]):
+                A list of covariates names that will be used as global effects.
+            global_intercept (boolean):
+                A boolean indicating whether to use an intercept in global effects.
+            random_effects (dict of str: list[boolean]):
+                A mapping that stores info of random effects. Key is the name of
+                covariate or of intercept, and value is a boolean list specifying
+                dimensions on which to impose random effects, e.g. if we want to
+                know random slope of covariate id=0 per location-age,
+                { 'haq': [True, True, False, False]},
+                if we want to add a random intercept on location, then
+                { 'haq': [True, True, False, False],
+                  'intercept_loc': [True, False, False, False]}.
+                Any name that does not appear in ``covariates`` will be interpreted
+                as name for an intercept. Note that the first ``n_grouping_dims``
+                of the boolean list must always be True for all random effects.
         """
         self.dimensions = dimensions
         self.n_grouping_dims = n_grouping_dims
@@ -81,27 +137,49 @@ class LME:
             for i in range(self.nd):
                 b[i] = max(1, int(b[i])*self.dimensions[i])
 
-        for cov in covariates:
-            assert len(cov) == 2
-            bool_to_size(cov[1])
-            assert len(cov[0]) == np.prod(cov[1])
-        self.covariates = covariates
+        self.covariates = []
+        self.cov_name_to_id = {}
+        i = 0
+        for name, pair in covariates.items():
+            #assert len(pair) == 2
+            if len(pair) != 2:
+                err_msg = 'input for ' + name + 'is not in correct form.'
+                raise RuntimeError(err_msg)
+            bool_to_size(pair[1])
+            assert len(pair[0]) == np.prod(pair[1])
+            self.covariates.append(pair)
+            self.cov_name_to_id[name] = i
+            i += 1
 
-        assert not (global_intercept and indicators != [])
-
-        self.global_ids = global_effects_indices
+        #assert not (global_intercept and indicators != {})
+        if global_intercept and indicators != {}:
+            err_msg = 'cannot have both global intercept be True and indicators \
+                       be non-empty.'
+            raise RuntimeError(err_msg)
+        self.global_ids = [self.cov_name_to_id[name] for name in global_effects_names]
         self.global_intercept = global_intercept
         self.k_beta = len(self.global_ids) + int(self.global_intercept)
-        for ind in indicators:
+        self.indicators = []
+        self.indicator_name_to_id = {}
+        i = 0
+        for name, ind in indicators.items():
             bool_to_size(ind)
             self.k_beta += np.prod(ind)
-        self.indicators = indicators
-
-        for ran_eff in random_effects_list:
-            assert len(ran_eff) == 2
-            assert all(ran_eff[1][:self.n_grouping_dims])
-            bool_to_size(ran_eff[1])
-        self.ran_list = random_effects_list
+            self.indicators.append(ind)
+            self.indicator_name_to_id[name] = i
+            i += 1
+        self.ran_list = []
+        for name, ran_eff in random_effects.items():
+            #assert all(ran_eff[:self.n_grouping_dims])
+            if not all(ran_eff[:self.n_grouping_dims]):
+                err_msg = 'the first ' + str(self.n_grouping_dims) + ' must be \
+                           True for random effects.'
+                raise RuntimeError(err_msg)
+            bool_to_size(ran_eff)
+            if name in self.cov_name_to_id:
+                self.ran_list.append((self.cov_name_to_id[name], ran_eff))
+            else:
+                self.ran_list.append((None, ran_eff))
 
         self.add_re = True
         if self.ran_list == []:
@@ -164,24 +242,45 @@ class LME:
         """
         Run optimization routine via LimeTr.
 
-        Parameters
-        ----------
-        var: ndarray
-            initialization for variables. If None, first run without random
-            effects to obtain a starting point
-        S: ndarray
-            standard deviation for each measurement. The size of S should be
-            the same as that of measurements vector
-        uprior: ndarray
-            lower and upper bounds for variables.
-        trim_percentage: float
-            percentage of datapoints to trim. Default is 0, i.e. no trimming.
-        share_obs_std: boolean
-            True if assuming data across studies share the same measurement
-            standard deviation
-        fit_fixed: boolean
-            whether to run a fit without random effects first in order to
-            obtain a good starting point
+        Args:
+            var (numpy.ndarray | None, optional):
+                One-dimensional array that gives initialization for variables.
+                If None, the program will first run without random effects
+                to obtain a starting point.
+            S (numpy.ndarray | None, optional):
+                One-dimensional numpy array that gives standard deviation for
+                each measurement. The size of S should be the same as that of
+                measurements vector. If None standard deviation of measurement
+                will be treated as variables and optimized.
+            uprior (numpy.ndarray | None, optional):
+                Two-dimensional array where one row stores lower bounds for
+                each variable and the other row stores upper bounds.
+            trim_percentage (float | 0.0, optional):
+                A float that gives percentage of datapoints to trim.
+                Default is 0, i.e. no trimming.
+            share_obs_std (boolean | True, optional):
+                A boolean that indicates whether the model should assume data
+                across studies share the same measurement standard deviation.
+            fit_fixed (boolean | True, optional):
+                A boolean that indicates whether to run a fit without random
+                effects first in order to obtain a good starting point.
+            inner_print_level (int | 5, optional):
+                ``print_level`` for Ipopt.
+            inner_max_iter (int | 100, optional):
+                Maximum number of iterations for inner optimization.
+            inner_tol (float | 1e-5, optional):
+                Tolerance level for inner optimization.
+            outer_verbose (boolean | False, optional):
+                Verbose option for outer optimization.
+            outer_max_iter (int | 1, optional):
+                Maximum number of iterations for outer optimization. When there
+                is no trimming, outer optimization is not needed, so the default
+                is set to be 1.
+            outer_step_size (float |1.0, optional):
+                Step size for outer optimization. Used in trimming.
+            outer_tol (float | 1e-6, optional):
+                Tolerance level for outer optimization.
+
         """
         self.buildZ()
         k = self.k_beta + self.k_gamma
