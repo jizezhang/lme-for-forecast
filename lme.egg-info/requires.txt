@@ -1,2 +1,0 @@
-limetr
-numpy
