@@ -8,9 +8,6 @@ import lme.rutils as rutils
 import copy
 import time
 
-### TODO list
-# - test draw()
-
 class LME:
 
     def __init__(self, dimensions, n_grouping_dims, y, covariates,
@@ -476,6 +473,13 @@ class LME:
         return beta_samples, gamma_samples
 
     def draw(self, n_draws=10):
+        """
+        Draw samples of global effects coefficient beta and random intercepts u
+        from their corresponding posterior distribution.
+
+        Args:
+            n_draws(int | 10): number of draws
+        """
         beta_samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
         u_samples = [[] for _ in range(len(self.ran_list))]
         for i in range(self.n_groups):

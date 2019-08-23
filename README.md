@@ -6,4 +6,4 @@ To use the wrapper code you need to install the `linear_dev` branch of LimeTr.
 * run `make clean` and `make special_mat` under the folder `limetr`.
 
 * install `limetr` via `setup.py` or include path to repo in
-  the file `lme_forecast_general.py`.
+  the file `lme_forecast_verbose.py`.
