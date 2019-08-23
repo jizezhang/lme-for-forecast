@@ -122,6 +122,12 @@ class LME:
                 as name for an intercept. Note that the first ``n_grouping_dims``
                 of the boolean list must always be True for all random effects.
         """
+        if any([d <= 1 for d in dimensions]):
+            err_msg = 'Dimensions should all be > 1.'
+            raise ValueError(err_msg)
+        if n_grouping_dims < 0:
+            err_msg = 'n_grouping_dims should be nonnegative.'
+            raise ValueError(err_msg)
         self.dimensions = dimensions
         self.n_grouping_dims = n_grouping_dims
         self.n_groups = int(np.prod(dimensions[:n_grouping_dims]))
@@ -282,6 +288,8 @@ class LME:
                 Tolerance level for outer optimization.
 
         """
+        self.S = S
+        self.share_obs_std = share_obs_std
         self.buildZ()
         k = self.k_beta + self.k_gamma
         if S is None:
@@ -312,15 +320,18 @@ class LME:
             self.constraints = []
 
         C = None
-        if self.constraints != []:
+        #if self.constraints != []:
+        if len(self.constraints) > 0:
             C = lambda var: self.constraints.dot(var)
 
         JC = None
-        if self.constraints != []:
+        #if self.constraints != []:
+        if len(self.constraints) > 0:
             JC = lambda var: self.constraints
 
         c = None
-        if self.constraints != []:
+        #if self.constraints != []:
+        if len(self.constraints) > 0:
             c = np.zeros((2,self.constraints.shape[0]))
 
         up = []
@@ -344,10 +355,10 @@ class LME:
             model_fixed = LimeTr(self.grouping, self.k_beta, self.k_gamma, self.Y, self.X, self.XT, \
                                  self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,\
                                  share_obs_std=share_obs_std, uprior=uprior_fixed)
-            print('fit with gamma fixed...')
+            #print('fit with gamma fixed...')
             t0 = time.time()
             model_fixed.optimize(x0=x0,print_level=inner_print_level,max_iter=inner_max_iter)
-            print('finished...elapsed',time.time()-t0)
+            #print('finished...elapsed',time.time()-t0)
 
             x0 = model_fixed.soln
             self.beta_fixed = model_fixed.beta
@@ -398,9 +409,19 @@ class LME:
         assert len(self.ran_list) > 0
         Z_split = np.split(self.Z,self.n_groups)
         self.var_u = []
+        S2 = []
+        if self.S == None:
+            if self.share_obs_std == True:
+                S2 = np.ones(self.N)*self.delta_soln
+            else:
+                S2 = np.repeat(self.delta_soln, self.grouping)
+        else:
+            S2 = self.S**2
+        S2_split = np.split(S2, self.n_groups)
         for i in range(self.n_groups):
             self.var_u.append(np.linalg.inv(np.diag(1./self.gamma_soln) +
-                               np.transpose(Z_split[i]).dot(Z_split[i])/self.delta_soln))
+                             (np.transpose(Z_split[i])/S2_split[i]).dot(Z_split[i])))
+
 
     def postVarGlobal(self):
         """
@@ -434,9 +455,19 @@ class LME:
 
         X_split = np.split(X, self.n_groups)
 
+        S2 = []
+        if self.S == None:
+            if self.share_obs_std == True:
+                S2 = np.ones(self.N)*self.delta_soln
+            else:
+                S2 = np.repeat(self.delta_soln, self.grouping)
+        else:
+            S2 = self.S**2
+        S2_split = np.split(S2, self.n_groups)
+
         for i in range(self.n_groups):
             V = Z_split[i].dot(np.diag(self.gamma_soln)).dot(np.transpose(Z_split[i])) \
-                + self.delta_soln*np.identity(self.grouping[i])
+                + S2_split[i]*np.identity(self.grouping[i])
             self.var_beta += np.transpose(X_split[i]).dot(np.linalg.inv(V)).dot(X_split[i])
         self.var_beta = np.linalg.inv(self.var_beta)
 
@@ -448,18 +479,22 @@ class LME:
         beta_samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
         u_samples = [[] for _ in range(len(self.ran_list))]
         for i in range(self.n_groups):
+            # sample all random effects u in global group i
             samples = np.random.multivariate_normal(self.u_soln[i], self.var_u[i], n_draws)
             start = 0
             for j in range(len(self.ran_list)):
                 ran_eff = self.ran_list[j]
                 dims = ran_eff[1]
+                # extract u related to random effect j
                 u_samples[j].append(samples[:,start:start + np.prod(dims[self.n_grouping_dims:])].reshape((n_draws,-1)))
                 start += np.prod(dims[self.n_grouping_dims:])
         for i in range(len(u_samples)):
+            # each u_sample is a matrix of dimension n_draws-by-n_groups specific
+            # to that random effect (>= number of global groups)
             u_samples[i] = np.transpose(np.hstack(u_samples[i]))
         for i in range(len(self.ran_list)):
             ran_eff = self.ran_list[i]
             _, dims = ran_eff
             u_samples[i] = u_samples[i].reshape(tuple(dims +[n_draws])).squeeze()
-
+        # each u_samples[i] have different shapes
         return beta_samples, u_samples

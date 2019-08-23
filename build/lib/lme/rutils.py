@@ -26,6 +26,9 @@ def repeatTranspose(y, dims, full_dims):
             for x in values:
                 temp.extend(np.split(x, full_dims[i]))
             values = temp
+    if len(values) == 1:
+        assert np.prod(dims) == 1
+        return np.array(list(values))
     assert len(np.squeeze(values)) == np.prod(dims)
     return np.squeeze(values)
 

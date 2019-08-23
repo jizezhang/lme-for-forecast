@@ -1,9 +1,7 @@
 
 def indicators():
-    import sys
-    sys.path.insert(0, '../lme/')
-    from lme_forecast_general import LME
-    import rutils
+    from lme.lme_forecast_general import LME
+    import lme.rutils as rutils
     import numpy as np
 
     dimensions = [5, 4, 3, 2]

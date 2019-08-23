@@ -3,8 +3,8 @@ path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
 sys.path.insert(0, path)
 from limetr import LimeTr
 import numpy as np
-import utils
-import rutils
+import lme.utils as utils
+import lme.rutils as rutils
 import copy
 import time
 
@@ -16,7 +16,7 @@ class LME:
 
     def __init__(self, dimensions, n_grouping_dims, y, covariates,
                  indicators, global_effects_indices,
-                 global_intercept, random_effects_list):
+                 global_intercept, random_effects):
 
         """
         Parameters:
@@ -55,7 +55,7 @@ class LME:
             indices for covariates that will be used as global effects
         global_intercept: boolean
             whether to use an intercept in global effects
-        random_effects_list: list of tuples
+        random_effects: list of tuples
             each element of the list is a tuple of
             (id_of_cov, dimensions_of_random_effects_excluding_grouping_dimensions)
             e.g. if we want to know random slope of covariate id=0 per location-age,
@@ -97,11 +97,11 @@ class LME:
             self.k_beta += np.prod(ind)
         self.indicators = indicators
 
-        for ran_eff in random_effects_list:
+        for ran_eff in random_effects:
             assert len(ran_eff) == 2
             assert all(ran_eff[1][:self.n_grouping_dims])
             bool_to_size(ran_eff[1])
-        self.ran_list = random_effects_list
+        self.ran_list = random_effects
 
         self.add_re = True
         if self.ran_list == []:
