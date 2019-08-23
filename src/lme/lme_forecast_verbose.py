@@ -1,6 +1,6 @@
-import sys
-path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
-sys.path.insert(0, path)
+#import sys
+#path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
+#sys.path.insert(0, path)
 from limetr import LimeTr
 import numpy as np
 import lme.utils as utils
