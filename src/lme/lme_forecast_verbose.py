@@ -1,12 +1,13 @@
-#import sys
-#path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
-#sys.path.insert(0, path)
+import sys
+path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
+sys.path.insert(0, path)
 from limetr import LimeTr
 import numpy as np
 import lme.utils as utils
 import lme.rutils as rutils
 import copy
 import time
+from collections import namedtuple
 
 class LME:
 
@@ -110,7 +111,7 @@ class LME:
                 A mapping that stores info of random effects. Key is the name of
                 covariate or of intercept, and value is a boolean list specifying
                 dimensions on which to impose random effects, e.g. if we want to
-                know random slope of covariate id=0 per location-age,
+                know random slope of covariate 'haq' per location-age,
                 { 'haq': [True, True, False, False]},
                 if we want to add a random intercept on location, then
                 { 'haq': [True, True, False, False],
@@ -171,6 +172,11 @@ class LME:
             self.indicators.append(ind)
             self.indicator_name_to_id[name] = i
             i += 1
+
+        self.beta_names = global_effects_names + list(self.indicator_name_to_id.keys())
+        if self.global_intercept:
+            self.beta_names = ['global_intercept'] + self.beta_names
+
         self.ran_list = []
         for name, ran_eff in random_effects.items():
             #assert all(ran_eff[:self.n_grouping_dims])
@@ -183,6 +189,8 @@ class LME:
                 self.ran_list.append((self.cov_name_to_id[name], ran_eff))
             else:
                 self.ran_list.append((None, ran_eff))
+
+        self.u_names = list(random_effects.keys())
 
         self.add_re = True
         if self.ran_list == []:
@@ -239,8 +247,8 @@ class LME:
 
     def optimize(self, var=None, S=None, uprior=None, trim_percentage=0.0,
                  share_obs_std=True, fit_fixed=True,inner_print_level=5,
-                 inner_max_iter=100, inner_tol=1e-5,outer_verbose=False,
-                 outer_max_iter=1, outer_step_size=1,
+                 inner_max_iter=100, inner_tol=1e-5, inner_verbose=True,
+                 outer_verbose=False, outer_max_iter=1, outer_step_size=1,
                  outer_tol=1e-6):
         """
         Run optimization routine via LimeTr.
@@ -273,6 +281,8 @@ class LME:
                 Maximum number of iterations for inner optimization.
             inner_tol (float | 1e-5, optional):
                 Tolerance level for inner optimization.
+            inner_verbose (boolean | True, optional):
+                Verbose option for inner optimization.
             outer_verbose (boolean | False, optional):
                 Verbose option for outer optimization.
             outer_max_iter (int | 1, optional):
@@ -384,7 +394,9 @@ class LME:
         self.info = model.info
         self.w_soln = model.w
         self.u_soln = model.estimateRE()
-        self.info = model.info['status_msg']
+        self.solve_status = model.info['status']
+        self.solve_status_msg = model.info['status_msg']
+
 
         self.yfit_no_random = model.X(model.beta)
 
@@ -396,6 +408,9 @@ class LME:
             self.yfit.append(yfit_no_random_split[i] + Z_split[i].dot(self.u_soln[i]))
         self.yfit = np.concatenate(self.yfit)
         self.model = model
+
+        if inner_verbose == True and self.solve_status != 0:
+            print(self.solve_status_msg)
 
     def postVarRandom(self):
         """
@@ -495,6 +510,7 @@ class LME:
         for i in range(len(u_samples)):
             # each u_sample is a matrix of dimension n_draws-by-n_groups specific
             # to that random effect (>= number of global groups)
+            # and the matrix is then transposed
             u_samples[i] = np.transpose(np.hstack(u_samples[i]))
         for i in range(len(self.ran_list)):
             ran_eff = self.ran_list[i]
@@ -502,3 +518,53 @@ class LME:
             u_samples[i] = u_samples[i].reshape(tuple(dims +[n_draws])).squeeze()
         # each u_samples[i] have different shapes
         return beta_samples, u_samples
+
+    def outputDraws(self, n_draws=10, by_type=True, combine_cov=True):
+        """
+        Output draws as namedtuples. Each tuple has two fields, `array` and `name(s)`.
+        `array` stores a numpy array of draws. There are three types of estimated
+        values we need draws: global covariates, indicators, and random effects.
+        For all three types, the dimension of `array` is equal to the original
+        dimension of the estimate, plus one extra dimension whose size is the number of draws.
+        e.g.
+        for covariates, its original dimension is 1, since it is a scalar,
+        thus the `array` dimension is n_draws;
+        for indicator, age-sex as an example. its original dimension is n_age-by-n_sex,
+        thus the `array` dimension is n_age-by-n_sex-by-n_draws;
+        random_effects is similar to indicators.
+
+        Args:
+            n_draws (int | 10): number of draws
+            by_type (boolean | True):
+                whether to group samples according to the three types
+            combine_cov (boolean | True):
+                whether to combine covariates into one namedtuple
+
+        """
+        beta_samples, u_samples = self.draw(n_draws)
+        samples = []
+        n_cov = int(self.global_intercept) + len(self.global_ids)
+        for i in range(n_cov):
+            samples.append(beta_samples[i,:])
+        start = n_cov
+        for dim in self.indicators:
+            samples.append(beta_samples[start:start+np.prod(dim),:].reshape(tuple(dim+[n_draws])).squeeze())
+            start += np.prod(dim)
+        assert start == self.k_beta
+        assert len(samples) == len(self.beta_names)
+        assert len(u_samples) == len(self.u_names)
+
+        samples_name_pairs = zip(samples + u_samples, self.beta_names + self.u_names)
+        Draws = namedtuple('Draws', 'array, name')
+        samples_name_pairs = [Draws(*pair) for pair in samples_name_pairs]
+
+        if by_type == True:
+            cov_samples = samples_name_pairs[:n_cov]
+            indicator_samples = samples_name_pairs[n_cov:len(self.beta_names)]
+            raneff_samples = samples_name_pairs[len(self.beta_names):]
+            if combine_cov == True:
+                CovDraws = namedtuple('CovDraws', 'array, names')
+                cov_samples = CovDraws(beta_samples[:n_cov,:], self.beta_names[:n_cov])
+            return cov_samples, indicator_samples, raneff_samples
+
+        return samples_name_pairs
