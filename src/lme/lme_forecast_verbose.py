@@ -2,6 +2,7 @@ import sys
 path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
 sys.path.insert(0, path)
 from limetr import LimeTr
+from limetr.utils import VarMat
 import numpy as np
 import lme.utils as utils
 import lme.rutils as rutils
@@ -435,7 +436,7 @@ class LME:
                              (np.transpose(Z_split[i])/S2_split[i]).dot(Z_split[i])))
 
 
-    def postVarGlobal(self):
+    def _postVarGlobal(self):
         """
         y_k = X_k beta + Z_k u_k + epsilon, u has var_mat D, epsilon has var_mat R
 
@@ -444,6 +445,7 @@ class LME:
         """
         assert self.k_beta > 0
         Z_split = np.split(self.Z,self.n_groups)
+        Z_split = np.split(np.zeros((self.N, self.k_gamma)), self.n_groups)
 
         self.var_beta = np.zeros((self.k_beta, self.k_beta))
 
@@ -482,6 +484,41 @@ class LME:
                 + S2_split[i]*np.identity(self.grouping[i])
             self.var_beta += np.transpose(X_split[i]).dot(np.linalg.inv(V)).dot(X_split[i])
         self.var_beta = np.linalg.inv(self.var_beta)
+
+    def postVarGlobal(self):
+        assert self.k_beta > 0
+
+        X = np.zeros((self.N, self.k_beta))
+        start = 0
+
+        if self.global_intercept == True:
+            X[:,start] = np.ones(self.N)
+            start += 1
+
+        for i in range(len(self.global_ids)):
+            ind = self.global_ids[i]
+            values, dims = self.covariates[ind]
+            assert values.shape[0] == np.prod(dims)
+            X[:,start] = rutils.repeat(values, dims, self.dimensions)
+            start += 1
+
+        for indicator in self.indicators:
+            X[:,start:start + np.prod(indicator)] = rutils.kronecker(indicator, self.dimensions, 0)
+            start += np.prod(indicator)
+
+        S2 = []
+        if self.S == None:
+            if self.share_obs_std == True:
+                S2 = np.ones(self.N)*self.delta_soln
+            else:
+                S2 = np.repeat(self.delta_soln, self.grouping)
+        else:
+            S2 = self.S**2
+
+        mat = VarMat(S2, np.zeros((self.N, self.k_gamma)), self.gamma_soln, self.grouping)
+        self.var_beta = np.dot(np.transpose(X), mat.invDot(X))
+        self.var_beta = np.linalg.inv(self.var_beta)
+
 
     def sampleGlobalWithLimeTr(self, sample_size=100, max_iter=300):
         beta_samples,gamma_samples = LimeTr.sampleSoln(self.model, sample_size=sample_size, max_iter=max_iter)
@@ -563,8 +600,11 @@ class LME:
             indicator_samples = samples_name_pairs[n_cov:len(self.beta_names)]
             raneff_samples = samples_name_pairs[len(self.beta_names):]
             if combine_cov == True:
-                CovDraws = namedtuple('CovDraws', 'array, names')
-                cov_samples = CovDraws(beta_samples[:n_cov,:], self.beta_names[:n_cov])
+                if n_cov > 0:
+                    CovDraws = namedtuple('CovDraws', 'array, names')
+                    cov_samples = CovDraws(beta_samples[:n_cov,:], self.beta_names[:n_cov])
+                else:
+                    cov_samples = None
             return cov_samples, indicator_samples, raneff_samples
 
         return samples_name_pairs

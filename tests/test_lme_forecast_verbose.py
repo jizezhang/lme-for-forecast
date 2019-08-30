@@ -49,6 +49,33 @@ class TestLME:
         y = np.random.randn(N)
         assert np.linalg.norm(model.XT(y) - np.transpose(X).dot(y)) < 1e-10
 
+
+    @pytest.mark.parametrize("random_effects", [[[4,1,2,1], [4,3,1,1]]])
+    def test_post_var_global(self, random_effects):
+        dimensions = [4, 3, 2, 2]
+        N = np.prod(dimensions)
+        X = np.random.randn(N,2)
+        beta_true = [1., -0.6]
+        Y_true = X.dot(beta_true)
+        dct = {}
+        for i, effect in enumerate(random_effects):
+            Z = rutils.kronecker(effect, dimensions, 0)
+            u = np.random.randn(np.prod(effect))*.2
+            Y_true += Z.dot(u)
+            dct['intercept'+str(i)] = [effect[j] == dimensions[j] for j in range(len(dimensions))]
+        delta_true = .005
+        Y = Y_true + np.random.randn(N)*np.sqrt(delta_true)
+        model = LME(dimensions, 1, Y, {'cov1':(X[:,0], [True]*len(dimensions)),\
+                    'cov2': (X[:,1], [True]*len(dimensions))}, {},
+                    ['cov1', 'cov2'], False, random_effects=dct)
+        model.optimize(inner_print_level=0)
+        model.postVarGlobal()
+        varmat1 = model.var_beta
+        model._postVarGlobal()
+        varmat2 = model.var_beta
+        assert np.linalg.norm(varmat1 - varmat2) < 1e-10
+
+
     @pytest.mark.parametrize("random_effects", [[[9,1,1,1], [9,3,1,1]],
                              pytest.param([[9,1,1,1],[9,1,2,1]], marks=pytest.mark.xfail)])
     def test_draw(self, random_effects):
