@@ -120,6 +120,22 @@ class LME:
                 Any name that does not appear in ``covariates`` will be interpreted
                 as name for an intercept. Note that the first ``n_grouping_dims``
                 of the boolean list must always be True for all random effects.
+
+        Attributes:
+            beta_soln (numpy.ndarray): solution for global effects coefficients
+            u_soln (list(numpy.ndarray)): solution for random effects coefficients
+            yfit (numpy.ndarray): fitted y (dependent variable) values
+            solve_status_msg (str): convergence info
+
+        Raises:
+            ValueError:
+                If any dimension in ``dimensions`` is less than or equal to 1.
+            ValueError:
+                If `n_grouping_dims` is negative.
+            RuntimeError:
+                If name or value for any covariate pair in ``covariates`` is missing.
+            RuntimeError:
+                If ``global_intercept`` is True and ``indicators`` is nonempty.
         """
         if any([d <= 1 for d in dimensions]):
             err_msg = 'Dimensions should all be > 1.'
@@ -531,6 +547,10 @@ class LME:
 
         Args:
             n_draws(int | 10): number of draws
+
+        Returns:
+            list(numpy.ndarray):
+                Arrays for beta samples and u samples
         """
         beta_samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
         u_samples = [[] for _ in range(len(self.ran_list))]
@@ -576,6 +596,14 @@ class LME:
                 whether to group samples according to the three types
             combine_cov (boolean | True):
                 whether to combine covariates into one namedtuple
+
+        Returns:
+            list(namedtuple):
+                List of namedtuples. Each tuple is length two. The first component
+                is a numpy array of draws, and the second is the name of the estimate.
+                If ``by_type`` is true, estimates are grouped by type.
+                If ``combine_cov`` is true, global covariates are combined into one
+                namedtuple.
 
         """
         beta_samples, u_samples = self.draw(n_draws)
