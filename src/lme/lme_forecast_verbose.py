@@ -133,9 +133,13 @@ class LME:
             ValueError:
                 If `n_grouping_dims` is negative.
             RuntimeError:
-                If name or value for any covariate pair in ``covariates`` is missing.
+                If value or boolean list for any covariate pair in ``covariates`` is missing.
             RuntimeError:
                 If ``global_intercept`` is True and ``indicators`` is nonempty.
+            RuntimeError:
+                If the first ``n_grouping_dims`` of a random effect is not all True.
+            RuntimeError:
+                If grouping dimensions appeared after non-grouping dimensions.
         """
         if any([d <= 1 for d in dimensions]):
             err_msg = 'Dimensions should all be > 1.'
@@ -198,8 +202,11 @@ class LME:
         for name, ran_eff in random_effects.items():
             #assert all(ran_eff[:self.n_grouping_dims])
             if not all(ran_eff[:self.n_grouping_dims]):
-                err_msg = 'the first ' + str(self.n_grouping_dims) + ' must be \
+                err_msg = name + ': the first ' + str(self.n_grouping_dims) + ' must be \
                            True for random effects.'
+                raise RuntimeError(err_msg)
+            if any([int(ran_eff[i]) - int(ran_eff[i-1]) > 0 for i in range(1, self.nd)]):
+                err_msg = name +': grouping dimensions must appear first.'
                 raise RuntimeError(err_msg)
             bool_to_size(ran_eff)
             if name in self.cov_name_to_id:
