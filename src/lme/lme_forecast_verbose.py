@@ -1,5 +1,5 @@
 import sys
-path = '/Users/jizez/Dropbox (uwamath)/limetr.git/'
+path = '/Users/jizez/Dropbox (uwamath)/limetr.git/src'
 sys.path.insert(0, path)
 from limetr import LimeTr
 from limetr.utils import VarMat
@@ -138,8 +138,6 @@ class LME:
                 If ``global_intercept`` is True and ``indicators`` is nonempty.
             RuntimeError:
                 If the first ``n_grouping_dims`` of a random effect is not all True.
-            RuntimeError:
-                If grouping dimensions appeared after non-grouping dimensions.
         """
         if any([d <= 1 for d in dimensions]):
             err_msg = 'Dimensions should all be > 1.'
@@ -204,9 +202,6 @@ class LME:
             if not all(ran_eff[:self.n_grouping_dims]):
                 err_msg = name + ': the first ' + str(self.n_grouping_dims) + ' must be \
                            True for random effects.'
-                raise RuntimeError(err_msg)
-            if any([int(ran_eff[i]) - int(ran_eff[i-1]) > 0 for i in range(1, self.nd)]):
-                err_msg = name +': grouping dimensions must appear first.'
                 raise RuntimeError(err_msg)
             bool_to_size(ran_eff)
             if name in self.cov_name_to_id:
@@ -383,7 +378,7 @@ class LME:
         if var is None or fit_fixed or self.add_re == False:
             uprior_fixed = copy.deepcopy(up)
             uprior_fixed[:,self.k_beta:self.k_beta+self.k_gamma] = 1e-8
-            model_fixed = LimeTr(self.grouping, self.k_beta, self.k_gamma, self.Y, self.X, self.XT, \
+            model_fixed = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT, \
                                  self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,\
                                  share_obs_std=share_obs_std, uprior=uprior_fixed)
             #print('fit with gamma fixed...')
@@ -401,7 +396,7 @@ class LME:
                 self.yfit_no_random = model_fixed.X(model_fixed.beta)
                 return
 
-        model = LimeTr(self.grouping, self.k_beta, self.k_gamma, self.Y, self.X, self.XT, \
+        model = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT, \
                        self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1-trim_percentage,\
                        share_obs_std=share_obs_std, uprior=up)
         model.fitModel(x0=x0,
