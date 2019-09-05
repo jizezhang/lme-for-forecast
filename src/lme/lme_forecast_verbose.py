@@ -155,10 +155,17 @@ class LME:
         assert self.N == np.prod(self.dimensions)
         assert self.N == sum(self.grouping)
 
+        # def bool_to_size(b):
+        #     assert len(b) == self.nd
+        #     for i in range(self.nd):
+        #         b[i] = max(1, int(b[i])*self.dimensions[i])
+
         def bool_to_size(b):
             assert len(b) == self.nd
+            dims = [1 for _ in range(self.nd)]
             for i in range(self.nd):
-                b[i] = max(1, int(b[i])*self.dimensions[i])
+                dims[i] = max(1, int(b[i])*self.dimensions[i])
+            return dims
 
         self.covariates = []
         self.cov_name_to_id = {}
@@ -168,9 +175,12 @@ class LME:
             if len(pair) != 2:
                 err_msg = 'input for ' + name + 'is not in correct form.'
                 raise RuntimeError(err_msg)
-            bool_to_size(pair[1])
-            assert len(pair[0]) == np.prod(pair[1])
-            self.covariates.append(pair)
+            #bool_to_size(pair[1])
+            #assert len(pair[0]) == np.prod(pair[1])
+            #self.covariates.append(pair)
+            dims = bool_to_size(pair[1])
+            assert len(pair[0]) == np.prod(dims)
+            self.covariates.append((pair[0], dims))
             self.cov_name_to_id[name] = i
             i += 1
 
@@ -186,9 +196,12 @@ class LME:
         self.indicator_name_to_id = {}
         i = 0
         for name, ind in indicators.items():
-            bool_to_size(ind)
-            self.k_beta += np.prod(ind)
-            self.indicators.append(ind)
+            #bool_to_size(ind)
+            #self.k_beta += np.prod(ind)
+            #self.indicators.append(ind)
+            dims = bool_to_size(ind)
+            self.k_beta += np.prod(dims)
+            self.indicators.append(dims)
             self.indicator_name_to_id[name] = i
             i += 1
 
@@ -203,11 +216,16 @@ class LME:
                 err_msg = name + ': the first ' + str(self.n_grouping_dims) + ' must be \
                            True for random effects.'
                 raise RuntimeError(err_msg)
-            bool_to_size(ran_eff)
+            # bool_to_size(ran_eff)
+            # if name in self.cov_name_to_id:
+            #     self.ran_list.append((self.cov_name_to_id[name], ran_eff))
+            # else:
+            #     self.ran_list.append((None, ran_eff))
+            dims = bool_to_size(ran_eff)
             if name in self.cov_name_to_id:
-                self.ran_list.append((self.cov_name_to_id[name], ran_eff))
+                self.ran_list.append((self.cov_name_to_id[name], dims))
             else:
-                self.ran_list.append((None, ran_eff))
+                self.ran_list.append((None, dims))
 
         self.u_names = list(random_effects.keys())
 
