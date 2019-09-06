@@ -51,24 +51,25 @@ class TestLME:
         assert np.linalg.norm(model.XT(y) - np.transpose(X).dot(y)) < 1e-10
 
 
-    @pytest.mark.parametrize("random_effects", [[[4,1,1,1], [4,3,1,1]]])
-    def test_post_var_global(self, random_effects):
+    #@pytest.mark.parametrize("random_effects", [[[4,1,1,1], [4,3,1,1]]])
+    def test_post_var_global(self):
         dimensions = [4, 3, 2, 2]
         N = np.prod(dimensions)
         X = np.random.randn(N,2)
         beta_true = [1., -0.6]
         Y_true = X.dot(beta_true)
-        dct = {}
-        for i, effect in enumerate(random_effects):
-            Z = rutils.kronecker(effect, dimensions, 0)
-            u = np.random.randn(np.prod(effect))*.2
-            Y_true += Z.dot(u)
-            dct['intercept'+str(i)] = [effect[j] == dimensions[j] for j in range(len(dimensions))]
+        #random_effects = [[4,1,1,1]]
+        # dct = {}
+        # for i, effect in enumerate(random_effects):
+        #     Z = rutils.kronecker(effect, dimensions, 0)
+        #     u = np.random.randn(np.prod(effect))*.2
+        #     Y_true += Z.dot(u)
+        #     dct['intercept'+str(i)] = [effect[j] == dimensions[j] for j in range(len(dimensions))]
         delta_true = .005
         Y = Y_true + np.random.randn(N)*np.sqrt(delta_true)
         model = LME(dimensions, 1, Y, {'cov1':(X[:,0], [True]*len(dimensions)),\
                     'cov2': (X[:,1], [True]*len(dimensions))}, {},
-                    ['cov1', 'cov2'], False, random_effects=dct)
+                    ['cov1', 'cov2'], False, {})
         model.optimize(inner_print_level=0)
         model.postVarGlobal()
         varmat1 = model.var_beta
@@ -76,8 +77,39 @@ class TestLME:
         varmat2 = model.var_beta
         assert np.linalg.norm(varmat1 - varmat2) < 1e-10
 
-
     @pytest.mark.parametrize("random_effects", [[[9,1,2,1],[9,3,1,1]],[[9,1,1,1],[9,1,2,1]]])
+    def test_draw_random_only(self, random_effects):
+        np.random.seed(127)
+        dimensions = [9, 3, 2, 2]
+        N = np.prod(dimensions)
+        Y_true = np.zeros(N)
+        dct = {}
+        for i, effect in enumerate(random_effects):
+            Z = rutils.kronecker(effect, dimensions, 0)
+            u = np.random.randn(np.prod(effect))
+            Y_true += Z.dot(u)
+            dct['intercept'+str(i)] = [effect[j] == dimensions[j] for j in range(len(dimensions))]
+        delta_true = .005
+        Y = Y_true + np.random.randn(N)*np.sqrt(delta_true)
+        model = LME(dimensions, 1, Y, {},
+                    {}, [], False, random_effects=dct)
+        model.optimize(inner_print_level=0)
+        model.postVarRandom()
+        n_draws = 1000
+        _, u_samples = model.draw(n_draws=n_draws)
+
+        u1 = np.concatenate([u[:np.prod(random_effects[0][1:])] for u in model.u_soln])
+        u1_sample_mean = np.mean(u_samples[0].reshape((-1, n_draws)),axis=1)
+        assert np.linalg.norm(u1 - u1_sample_mean)/np.linalg.norm(u1) < .05
+        u2 = np.concatenate([u[np.prod(random_effects[0][1:]):np.prod(random_effects[0][1:])
+                               +np.prod(random_effects[1][1:])] for u in model.u_soln])
+        u2_sample_mean = np.mean(u_samples[1].reshape((-1, n_draws)),axis=1)
+        assert np.linalg.norm(u2 - u2_sample_mean)/np.linalg.norm(u2) < .05
+
+        return
+
+
+    @pytest.mark.parametrize("random_effects", [[[9,1,2,1],[9,3,1,1]],[[9,1,1,1],[9,1,2,1]], []])
     def test_draw(self, random_effects):
         np.random.seed(127)
         dimensions = [9, 3, 2, 2]
@@ -98,16 +130,18 @@ class TestLME:
                     {}, ['cov'], True, random_effects=dct)
         model.optimize(inner_print_level=0)
         model.postVarGlobal()
-        model.postVarRandom()
-        n_draws = 500
+        if len(random_effects) > 0:
+            model.postVarRandom()
+        n_draws = 1000
         beta_samples, u_samples = model.draw(n_draws=n_draws)
         beta_sample_mean = np.mean(beta_samples, axis=1)
         assert np.linalg.norm(beta_sample_mean - model.beta_soln)/np.linalg.norm(model.beta_soln) < .02
 
-        u1 = np.concatenate([u[:np.prod(random_effects[0][1:])] for u in model.u_soln])
-        u1_sample_mean = np.mean(u_samples[0].reshape((-1, n_draws)),axis=1)
-        assert np.linalg.norm(u1 - u1_sample_mean)/np.linalg.norm(u1) < .05
-        u2 = np.concatenate([u[np.prod(random_effects[0][1:]):np.prod(random_effects[0][1:])
-                               +np.prod(random_effects[1][1:])] for u in model.u_soln])
-        u2_sample_mean = np.mean(u_samples[1].reshape((-1, n_draws)),axis=1)
-        assert np.linalg.norm(u2 - u2_sample_mean)/np.linalg.norm(u2) < .05
+        if len(random_effects) > 0:
+            u1 = np.concatenate([u[:np.prod(random_effects[0][1:])] for u in model.u_soln])
+            u1_sample_mean = np.mean(u_samples[0].reshape((-1, n_draws)),axis=1)
+            assert np.linalg.norm(u1 - u1_sample_mean)/np.linalg.norm(u1) < .05
+            u2 = np.concatenate([u[np.prod(random_effects[0][1:]):np.prod(random_effects[0][1:])
+                                   +np.prod(random_effects[1][1:])] for u in model.u_soln])
+            u2_sample_mean = np.mean(u_samples[1].reshape((-1, n_draws)),axis=1)
+            assert np.linalg.norm(u2 - u2_sample_mean)/np.linalg.norm(u2) < .05

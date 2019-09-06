@@ -229,9 +229,9 @@ class LME:
 
         self.u_names = list(random_effects.keys())
 
-        self.add_re = True
-        if self.ran_list == []:
-            self.add_re = False
+        # self.add_re = True
+        # if self.ran_list == []:
+        #     self.add_re = False
         return
 
     def X(self, beta, naive=False):
@@ -278,8 +278,10 @@ class LME:
                 values = rutils.repeat(self.covariates[id][0],self.covariates[id][1], self.dimensions)
             self.k_gamma += np.prod(dims[self.n_grouping_dims:])
             Z.append(values.reshape((-1,1))*np.tile(rutils.kronecker(dims[self.n_grouping_dims:], self.dimensions, self.n_grouping_dims),(self.n_groups,1)))
-
-        self.Z = np.hstack(Z)
+        if self.k_gamma > 0:
+            self.Z = np.hstack(Z)
+        else:
+            self.Z = np.zeros((self.N, 1))
         #print(self.Z.shape)
 
     def optimize(self, var=None, S=None, uprior=None, trim_percentage=0.0,
@@ -346,6 +348,13 @@ class LME:
         print('k_gamma', self.k_gamma)
         print('total number of fixed effects variables',k)
 
+        if self.k_gamma == 0:
+            self.add_re = False
+            self.k_gamma = 1
+            k += 1
+        else:
+            self.add_re = True
+
         C = []
         start = self.k_beta
         for ran in self.ran_list:
@@ -390,8 +399,13 @@ class LME:
 
         x0 = np.ones(k)*.1
         if var is not None:
-            assert len(var) == k
-            x0 = var
+            if self.add_re == True:
+                assert len(var) == k
+                x0 = var
+            else:
+                assert len(var) == self.k_beta
+                x0 = np.append(var, [1e-8])
+                assert len(x0) == k
 
         if var is None or fit_fixed or self.add_re == False:
             uprior_fixed = copy.deepcopy(up)
@@ -409,6 +423,7 @@ class LME:
             if self.add_re == False:
                 self.beta_soln = self.beta_fixed
                 self.delta_soln = model_fixed.delta
+                self.gamma_soln = model_fixed.gamma
                 self.w_soln = model_fixed.w
                 self.info = model_fixed.info['status_msg']
                 self.yfit_no_random = model_fixed.X(model_fixed.beta)
@@ -572,27 +587,30 @@ class LME:
             list(numpy.ndarray):
                 Arrays for beta samples and u samples
         """
-        beta_samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
+        beta_samples = []
+        if self.k_beta > 0:
+            beta_samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
         u_samples = [[] for _ in range(len(self.ran_list))]
-        for i in range(self.n_groups):
-            # sample all random effects u in global group i
-            samples = np.random.multivariate_normal(self.u_soln[i], self.var_u[i], n_draws)
-            start = 0
-            for j in range(len(self.ran_list)):
-                ran_eff = self.ran_list[j]
-                dims = ran_eff[1]
-                # extract u related to random effect j
-                u_samples[j].append(samples[:,start:start + np.prod(dims[self.n_grouping_dims:])].reshape((n_draws,-1)))
-                start += np.prod(dims[self.n_grouping_dims:])
-        for i in range(len(u_samples)):
-            # each u_sample is a matrix of dimension n_draws-by-n_groups specific
-            # to that random effect (>= number of global groups)
-            # and the matrix is then transposed
-            u_samples[i] = np.transpose(np.hstack(u_samples[i]))
-        for i in range(len(self.ran_list)):
-            ran_eff = self.ran_list[i]
-            _, dims = ran_eff
-            u_samples[i] = u_samples[i].reshape(tuple(dims +[n_draws])).squeeze()
+        if self.add_re == True:
+            for i in range(self.n_groups):
+                # sample all random effects u in global group i
+                samples = np.random.multivariate_normal(self.u_soln[i], self.var_u[i], n_draws)
+                start = 0
+                for j in range(len(self.ran_list)):
+                    ran_eff = self.ran_list[j]
+                    dims = ran_eff[1]
+                    # extract u related to random effect j
+                    u_samples[j].append(samples[:,start:start + np.prod(dims[self.n_grouping_dims:])].reshape((n_draws,-1)))
+                    start += np.prod(dims[self.n_grouping_dims:])
+            for i in range(len(u_samples)):
+                # each u_sample is a matrix of dimension n_draws-by-n_groups specific
+                # to that random effect (>= number of global groups)
+                # and the matrix is then transposed
+                u_samples[i] = np.transpose(np.hstack(u_samples[i]))
+            for i in range(len(self.ran_list)):
+                ran_eff = self.ran_list[i]
+                _, dims = ran_eff
+                u_samples[i] = u_samples[i].reshape(tuple(dims +[n_draws])).squeeze()
         # each u_samples[i] have different shapes
         return beta_samples, u_samples
 
