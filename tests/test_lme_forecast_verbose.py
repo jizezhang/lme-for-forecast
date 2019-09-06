@@ -71,6 +71,7 @@ class TestLME:
                     'cov2': (X[:,1], [True]*len(dimensions))}, {},
                     ['cov1', 'cov2'], False, {})
         model.optimize(inner_print_level=0)
+        assert model.gamma_soln == 1e-8
         model.postVarGlobal()
         varmat1 = model.var_beta
         model._postVarGlobal()
@@ -105,6 +106,8 @@ class TestLME:
                                +np.prod(random_effects[1][1:])] for u in model.u_soln])
         u2_sample_mean = np.mean(u_samples[1].reshape((-1, n_draws)),axis=1)
         assert np.linalg.norm(u2 - u2_sample_mean)/np.linalg.norm(u2) < .05
+
+        model.outputDraws()
 
         return
 
@@ -145,3 +148,4 @@ class TestLME:
                                    +np.prod(random_effects[1][1:])] for u in model.u_soln])
             u2_sample_mean = np.mean(u_samples[1].reshape((-1, n_draws)),axis=1)
             assert np.linalg.norm(u2 - u2_sample_mean)/np.linalg.norm(u2) < .05
+        model.outputDraws()
