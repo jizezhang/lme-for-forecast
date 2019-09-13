@@ -4,11 +4,11 @@ import pytest
 from lme.lme_forecast_verbose import LME
 import lme.rutils as rutils
 
+
 class TestLME:
     """Tests for `lme.lme_forecast_verbose` """
 
-
-    @pytest.mark.parametrize("random_intercept",[[5,4,1,1],[5,1,1,1],[5,4,3,2]])
+    @pytest.mark.parametrize("random_intercept", [[5, 4, 1, 1], [5, 1, 1, 1], [5, 4, 3, 2]])
     def test_random_intercept(self, random_intercept):
         dimensions = [5, 4, 3, 2]
         dct = {'intercept':[random_intercept[j] == dimensions[j] for j in range(len(dimensions))]}
@@ -19,10 +19,10 @@ class TestLME:
         model.buildZ()
         assert np.linalg.norm(Z-model.Z) == 0.0
 
-    @pytest.mark.parametrize("indicator", [[5,1,1,2],[1,4,1,1],[5,4,3,2],[1,1,1,1]])
+    @pytest.mark.parametrize("indicator", [[5, 1, 1, 2], [1, 4, 1, 1], [5, 4, 3, 2], [1, 1, 1, 1]])
     def test_indicators(self, indicator):
         dimensions = [5, 4, 3, 2]
-        dct = {'intercept':[indicator[j] == dimensions[j] for j in range(len(dimensions))]}
+        dct = {'intercept': [indicator[j] == dimensions[j] for j in range(len(dimensions))]}
 
         y = np.random.randn(np.prod(dimensions))
         model = LME(dimensions, 0, y, {}, dct, [], False, {})
@@ -40,35 +40,26 @@ class TestLME:
         cov = np.random.randn(np.prod(cov_dim))
         cov_dim_bool = [cov_dim[i] == dimensions[i] for i in range(len(dimensions))]
         Z = rutils.kronecker(cov_dim, dimensions, 0)
-        X[:,1] = Z.dot(cov)
+        X[:, 1] = Z.dot(cov)
         beta_true = [1., -0.6]
         Y = X.dot(beta_true)
-        model = LME(dimensions, 0, Y, {'cov1':(cov, cov_dim_bool)}, {}, ['cov1'],
+        model = LME(dimensions, 0, Y, {'cov1': (cov, cov_dim_bool)}, {}, ['cov1'],
                     True, {})
         beta = np.random.randn(2)
         assert np.linalg.norm(model.X(beta) - X.dot(beta)) < 1e-10
         y = np.random.randn(N)
         assert np.linalg.norm(model.XT(y) - np.transpose(X).dot(y)) < 1e-10
 
-
-    #@pytest.mark.parametrize("random_effects", [[[4,1,1,1], [4,3,1,1]]])
     def test_post_var_global(self):
         dimensions = [4, 3, 2, 2]
         N = np.prod(dimensions)
         X = np.random.randn(N,2)
         beta_true = [1., -0.6]
         Y_true = X.dot(beta_true)
-        #random_effects = [[4,1,1,1]]
-        # dct = {}
-        # for i, effect in enumerate(random_effects):
-        #     Z = rutils.kronecker(effect, dimensions, 0)
-        #     u = np.random.randn(np.prod(effect))*.2
-        #     Y_true += Z.dot(u)
-        #     dct['intercept'+str(i)] = [effect[j] == dimensions[j] for j in range(len(dimensions))]
         delta_true = .005
         Y = Y_true + np.random.randn(N)*np.sqrt(delta_true)
-        model = LME(dimensions, 1, Y, {'cov1':(X[:,0], [True]*len(dimensions)),\
-                    'cov2': (X[:,1], [True]*len(dimensions))}, {},
+        model = LME(dimensions, 1, Y, {'cov1':(X[:,0], [True]*len(dimensions)),
+                    'cov2': (X[:, 1], [True]*len(dimensions))}, {},
                     ['cov1', 'cov2'], False, {})
         model.optimize(inner_print_level=0)
         assert model.gamma_soln == 1e-8
@@ -78,7 +69,7 @@ class TestLME:
         varmat2 = model.var_beta
         assert np.linalg.norm(varmat1 - varmat2) < 1e-10
 
-    @pytest.mark.parametrize("random_effects", [[[9,1,2,1],[9,3,1,1]],[[9,1,1,1],[9,1,2,1]]])
+    @pytest.mark.parametrize("random_effects", [[[9, 1, 2, 1], [9, 3, 1, 1]], [[9, 1, 1, 1], [9, 1, 2, 1]]])
     def test_draw_random_only(self, random_effects):
         np.random.seed(127)
         dimensions = [9, 3, 2, 2]
@@ -111,14 +102,13 @@ class TestLME:
 
         return
 
-
-    @pytest.mark.parametrize("random_effects", [[[9,1,2,1],[9,3,1,1]],[[9,1,1,1],[9,1,2,1]], []])
+    @pytest.mark.parametrize("random_effects", [[[9, 1, 2, 1], [9, 3, 1, 1]], [[9, 1, 1, 1], [9, 1, 2, 1]], []])
     def test_draw(self, random_effects):
         np.random.seed(127)
         dimensions = [9, 3, 2, 2]
         N = np.prod(dimensions)
         X = np.ones((N,2))
-        X[:,1] = np.random.randn(N)
+        X[:, 1] = np.random.randn(N)
         beta_true = [1., -0.6]
         Y_true = X.dot(beta_true)
         dct = {}

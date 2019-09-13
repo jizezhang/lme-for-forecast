@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def repeat(values, dims, full_dims):
     """
     to compute function value
@@ -12,6 +13,7 @@ def repeat(values, dims, full_dims):
         cumprod *= full_dims[i]
     assert values.shape[0] == np.prod(full_dims)
     return values
+
 
 def repeatTranspose(y, dims, full_dims):
     """
@@ -31,6 +33,7 @@ def repeatTranspose(y, dims, full_dims):
         return np.array(list(values))
     assert len(np.squeeze(values)) == np.prod(dims)
     return np.squeeze(values)
+
 
 def kronecker(dims, full_dims, start=0):
     """

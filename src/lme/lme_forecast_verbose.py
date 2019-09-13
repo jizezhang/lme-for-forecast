@@ -1,14 +1,15 @@
-import sys
-path = '/Users/jizez/Dropbox (uwamath)/limetr.git/src'
-sys.path.insert(0, path)
-from limetr import LimeTr
-from limetr.utils import VarMat
 import numpy as np
 import lme.utils as utils
 import lme.rutils as rutils
 import copy
 import time
 from collections import namedtuple
+import sys
+path = '/Users/jizez/Dropbox (uwamath)/limetr.git/src'
+sys.path.insert(0, path)
+from limetr import LimeTr
+from limetr.utils import VarMat
+
 
 class LME:
 
@@ -143,7 +144,7 @@ class LME:
             err_msg = 'Dimensions should all be > 1.'
             raise ValueError(err_msg)
         if n_grouping_dims < 0:
-            err_msg = 'n_grouping_dims should be nonnegative.'
+            err_msg = 'n_grouping_dims should be non-negative.'
             raise ValueError(err_msg)
         self.dimensions = dimensions
         self.n_grouping_dims = n_grouping_dims
@@ -171,20 +172,15 @@ class LME:
         self.cov_name_to_id = {}
         i = 0
         for name, pair in covariates.items():
-            #assert len(pair) == 2
             if len(pair) != 2:
                 err_msg = 'input for ' + name + 'is not in correct form.'
                 raise RuntimeError(err_msg)
-            #bool_to_size(pair[1])
-            #assert len(pair[0]) == np.prod(pair[1])
-            #self.covariates.append(pair)
             dims = bool_to_size(pair[1])
             assert len(pair[0]) == np.prod(dims)
             self.covariates.append((pair[0], dims))
             self.cov_name_to_id[name] = i
             i += 1
 
-        #assert not (global_intercept and indicators != {})
         if global_intercept and indicators != {}:
             err_msg = 'cannot have both global intercept be True and indicators \
                        be non-empty.'
@@ -196,9 +192,6 @@ class LME:
         self.indicator_name_to_id = {}
         i = 0
         for name, ind in indicators.items():
-            #bool_to_size(ind)
-            #self.k_beta += np.prod(ind)
-            #self.indicators.append(ind)
             dims = bool_to_size(ind)
             self.k_beta += np.prod(dims)
             self.indicators.append(dims)
@@ -211,16 +204,10 @@ class LME:
 
         self.ran_list = []
         for name, ran_eff in random_effects.items():
-            #assert all(ran_eff[:self.n_grouping_dims])
             if not all(ran_eff[:self.n_grouping_dims]):
                 err_msg = name + ': the first ' + str(self.n_grouping_dims) + ' must be \
                            True for random effects.'
                 raise RuntimeError(err_msg)
-            # bool_to_size(ran_eff)
-            # if name in self.cov_name_to_id:
-            #     self.ran_list.append((self.cov_name_to_id[name], ran_eff))
-            # else:
-            #     self.ran_list.append((None, ran_eff))
             dims = bool_to_size(ran_eff)
             if name in self.cov_name_to_id:
                 self.ran_list.append((self.cov_name_to_id[name], dims))
@@ -229,12 +216,9 @@ class LME:
 
         self.u_names = list(random_effects.keys())
 
-        # self.add_re = True
-        # if self.ran_list == []:
-        #     self.add_re = False
         return
 
-    def X(self, beta, naive=False):
+    def X(self, beta):
         assert len(beta) == self.k_beta
         y = np.zeros(self.N)
         start = 0
@@ -272,7 +256,7 @@ class LME:
         for ran in self.ran_list:
             id, dims = ran
             values = []
-            if id == None:
+            if id is None:
                 values = np.ones(self.N)
             else:
                 values = rutils.repeat(self.covariates[id][0],self.covariates[id][1], self.dimensions)
@@ -282,7 +266,6 @@ class LME:
             self.Z = np.hstack(Z)
         else:
             self.Z = np.zeros((self.N, 1))
-        #print(self.Z.shape)
 
     def optimize(self, var=None, S=None, uprior=None, trim_percentage=0.0,
                  share_obs_std=True, fit_fixed=True,inner_print_level=5,
@@ -373,17 +356,14 @@ class LME:
             self.constraints = []
 
         C = None
-        #if self.constraints != []:
         if len(self.constraints) > 0:
             C = lambda var: self.constraints.dot(var)
 
         JC = None
-        #if self.constraints != []:
         if len(self.constraints) > 0:
             JC = lambda var: self.constraints
 
         c = None
-        #if self.constraints != []:
         if len(self.constraints) > 0:
             c = np.zeros((2,self.constraints.shape[0]))
 
@@ -399,7 +379,7 @@ class LME:
 
         x0 = np.ones(k)*.1
         if var is not None:
-            if self.add_re == True:
+            if self.add_re is True:
                 assert len(var) == k
                 x0 = var
             else:
@@ -407,20 +387,17 @@ class LME:
                 x0 = np.append(var, [1e-8])
                 assert len(x0) == k
 
-        if var is None or fit_fixed or self.add_re == False:
+        if var is None or fit_fixed or self.add_re is False:
             uprior_fixed = copy.deepcopy(up)
             uprior_fixed[:,self.k_beta:self.k_beta+self.k_gamma] = 1e-8
-            model_fixed = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT, \
-                                 self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,\
+            model_fixed = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
+                                 self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,
                                  share_obs_std=share_obs_std, uprior=uprior_fixed)
-            #print('fit with gamma fixed...')
-            t0 = time.time()
             model_fixed.optimize(x0=x0,print_level=inner_print_level,max_iter=inner_max_iter)
-            #print('finished...elapsed',time.time()-t0)
 
             x0 = model_fixed.soln
             self.beta_fixed = model_fixed.beta
-            if self.add_re == False:
+            if self.add_re is False:
                 self.beta_soln = self.beta_fixed
                 self.delta_soln = model_fixed.delta
                 self.gamma_soln = model_fixed.gamma
@@ -429,17 +406,17 @@ class LME:
                 self.yfit_no_random = model_fixed.X(model_fixed.beta)
                 return
 
-        model = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT, \
-                       self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1-trim_percentage,\
+        model = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
+                       self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1-trim_percentage,
                        share_obs_std=share_obs_std, uprior=up)
         model.fitModel(x0=x0,
-                     inner_print_level=inner_print_level,
-                     inner_max_iter=inner_max_iter,
-                     inner_tol=inner_tol,
-                     outer_verbose=outer_verbose,
-                     outer_max_iter=outer_max_iter,
-                     outer_step_size=outer_step_size,
-                     outer_tol=outer_tol)
+                       inner_print_level=inner_print_level,
+                       inner_max_iter=inner_max_iter,
+                       inner_tol=inner_tol,
+                       outer_verbose=outer_verbose,
+                       outer_max_iter=outer_max_iter,
+                       outer_step_size=outer_step_size,
+                       outer_tol=outer_tol)
         self.beta_soln = model.beta
         self.gamma_soln = model.gamma
         self.delta_soln = model.delta
@@ -448,7 +425,6 @@ class LME:
         self.u_soln = model.estimateRE()
         self.solve_status = model.info['status']
         self.solve_status_msg = model.info['status_msg']
-
 
         self.yfit_no_random = model.X(model.beta)
 
@@ -471,11 +447,11 @@ class LME:
         Var(u_k) = inv(inv(D) + Z_k'inv(R)Z_k)
         """
         assert len(self.ran_list) > 0
-        Z_split = np.split(self.Z,self.n_groups)
+        Z_split = np.split(self.Z, self.n_groups)
         self.var_u = []
         S2 = []
-        if self.S == None:
-            if self.share_obs_std == True:
+        if self.S is None:
+            if self.share_obs_std is True:
                 S2 = np.ones(self.N)*self.delta_soln
             else:
                 S2 = np.repeat(self.delta_soln, self.grouping)
@@ -503,26 +479,26 @@ class LME:
         X = np.zeros((self.N, self.k_beta))
         start = 0
 
-        if self.global_intercept == True:
-            X[:,start] = np.ones(self.N)
+        if self.global_intercept is True:
+            X[:, start] = np.ones(self.N)
             start += 1
 
         for i in range(len(self.global_ids)):
             ind = self.global_ids[i]
             values, dims = self.covariates[ind]
             assert values.shape[0] == np.prod(dims)
-            X[:,start] = rutils.repeat(values, dims, self.dimensions)
+            X[:, start] = rutils.repeat(values, dims, self.dimensions)
             start += 1
 
         for indicator in self.indicators:
-            X[:,start:start + np.prod(indicator)] = rutils.kronecker(indicator, self.dimensions, 0)
+            X[:, start:start + np.prod(indicator)] = rutils.kronecker(indicator, self.dimensions, 0)
             start += np.prod(indicator)
 
         X_split = np.split(X, self.n_groups)
 
         S2 = []
-        if self.S == None:
-            if self.share_obs_std == True:
+        if self.S is None:
+            if self.share_obs_std is True:
                 S2 = np.ones(self.N)*self.delta_soln
             else:
                 S2 = np.repeat(self.delta_soln, self.grouping)
@@ -542,7 +518,7 @@ class LME:
         X = np.zeros((self.N, self.k_beta))
         start = 0
 
-        if self.global_intercept == True:
+        if self.global_intercept is True:
             X[:,start] = np.ones(self.N)
             start += 1
 
@@ -558,8 +534,8 @@ class LME:
             start += np.prod(indicator)
 
         S2 = []
-        if self.S == None:
-            if self.share_obs_std == True:
+        if self.S is None:
+            if self.share_obs_std is True:
                 S2 = np.ones(self.N)*self.delta_soln
             else:
                 S2 = np.repeat(self.delta_soln, self.grouping)
@@ -569,7 +545,6 @@ class LME:
         mat = VarMat(S2, np.zeros((self.N, self.k_gamma)), self.gamma_soln, self.grouping)
         self.var_beta = np.dot(np.transpose(X), mat.invDot(X))
         self.var_beta = np.linalg.inv(self.var_beta)
-
 
     def sampleGlobalWithLimeTr(self, sample_size=100, max_iter=300):
         beta_samples,gamma_samples = LimeTr.sampleSoln(self.model, sample_size=sample_size, max_iter=max_iter)
@@ -591,7 +566,7 @@ class LME:
         if self.k_beta > 0:
             beta_samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
         u_samples = [[] for _ in range(len(self.ran_list))]
-        if self.add_re == True:
+        if self.add_re is True:
             for i in range(self.n_groups):
                 # sample all random effects u in global group i
                 samples = np.random.multivariate_normal(self.u_soln[i], self.var_u[i], n_draws)
@@ -661,11 +636,11 @@ class LME:
         Draws = namedtuple('Draws', 'array, name')
         samples_name_pairs = [Draws(*pair) for pair in samples_name_pairs]
 
-        if by_type == True:
+        if by_type is True:
             cov_samples = samples_name_pairs[:n_cov]
             indicator_samples = samples_name_pairs[n_cov:len(self.beta_names)]
             raneff_samples = samples_name_pairs[len(self.beta_names):]
-            if combine_cov == True:
+            if combine_cov is True:
                 if n_cov > 0:
                     CovDraws = namedtuple('CovDraws', 'array, names')
                     cov_samples = CovDraws(beta_samples[:n_cov,:], self.beta_names[:n_cov])
