@@ -250,7 +250,7 @@ class LME:
         assert len(val) == self.k_beta
         return np.array(val)
 
-    def buildZ(self):
+    def buildZ(self, normalize=False):
         Z = []
         self.k_gamma = 0
         for ran in self.ran_list:
@@ -264,6 +264,8 @@ class LME:
             Z.append(values.reshape((-1,1))*np.tile(rutils.kronecker(dims[self.n_grouping_dims:], self.dimensions, self.n_grouping_dims),(self.n_groups,1)))
         if self.k_gamma > 0:
             self.Z = np.hstack(Z)
+            if normalize:
+                self.Z = self.Z/np.linalg.norm(self.Z, axis=0)
         else:
             self.Z = np.zeros((self.N, 1))
 
@@ -271,7 +273,7 @@ class LME:
                  share_obs_std=True, fit_fixed=True,inner_print_level=5,
                  inner_max_iter=100, inner_tol=1e-5, inner_verbose=True,
                  outer_verbose=False, outer_max_iter=1, outer_step_size=1,
-                 outer_tol=1e-6):
+                 outer_tol=1e-6, normalize_Z=False):
         """
         Run optimization routine via LimeTr.
 
@@ -319,7 +321,7 @@ class LME:
         """
         self.S = S
         self.share_obs_std = share_obs_std
-        self.buildZ()
+        self.buildZ(normalize_Z)
         k = self.k_beta + self.k_gamma
         if S is None:
             if share_obs_std:
@@ -329,7 +331,7 @@ class LME:
         print('n_groups', self.n_groups)
         print('k_beta', self.k_beta)
         print('k_gamma', self.k_gamma)
-        print('total number of fixed effects variables',k)
+        print('total number of fixed effects variables', k)
 
         if self.k_gamma == 0:
             self.add_re = False
