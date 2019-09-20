@@ -273,7 +273,7 @@ class LME:
                  share_obs_std=True, fit_fixed=True,inner_print_level=5,
                  inner_max_iter=100, inner_tol=1e-5, inner_verbose=True,
                  outer_verbose=False, outer_max_iter=1, outer_step_size=1,
-                 outer_tol=1e-6, normalize_Z=False):
+                 outer_tol=1e-6, normalize_Z=True):
         """
         Run optimization routine via LimeTr.
 
