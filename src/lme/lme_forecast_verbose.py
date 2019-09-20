@@ -4,9 +4,9 @@ import lme.rutils as rutils
 import copy
 import time
 from collections import namedtuple
-import sys
-path = '/Users/jizez/Dropbox (uwamath)/limetr.git/src'
-sys.path.insert(0, path)
+# import sys
+# path = '/Users/jizez/Dropbox (uwamath)/limetr.git/src'
+# sys.path.insert(0, path)
 from limetr import LimeTr
 from limetr.utils import VarMat
 
@@ -261,19 +261,25 @@ class LME:
             else:
                 values = rutils.repeat(self.covariates[id][0],self.covariates[id][1], self.dimensions)
             self.k_gamma += np.prod(dims[self.n_grouping_dims:])
-            Z.append(values.reshape((-1,1))*np.tile(rutils.kronecker(dims[self.n_grouping_dims:], self.dimensions, self.n_grouping_dims),(self.n_groups,1)))
+            Z.append(values.reshape((-1, 1)) *
+                     np.tile(rutils.kronecker(dims[self.n_grouping_dims:], self.dimensions, self.n_grouping_dims),
+                             (self.n_groups, 1)))
         if self.k_gamma > 0:
             self.Z = np.hstack(Z)
             if normalize:
-                self.Z = self.Z/np.linalg.norm(self.Z, axis=0)
+                print('normalizing Z ...')
+                col_norm = np.linalg.norm(self.Z, axis=0)
+                print(col_norm)
+                self.Z = self.Z/col_norm
         else:
             self.Z = np.zeros((self.N, 1))
 
     def optimize(self, var=None, S=None, uprior=None, trim_percentage=0.0,
                  share_obs_std=True, fit_fixed=True,inner_print_level=5,
                  inner_max_iter=100, inner_tol=1e-5, inner_verbose=True,
+                 inner_acceptable_tol=1e-4,
                  outer_verbose=False, outer_max_iter=1, outer_step_size=1,
-                 outer_tol=1e-6, normalize_Z=True):
+                 outer_tol=1e-6, normalize_Z=False):
         """
         Run optimization routine via LimeTr.
 
@@ -347,8 +353,8 @@ class LME:
             m = np.prod(dims[self.n_grouping_dims:])
             c = np.zeros((m-1,k))
             for i in range(m-1):
-                c[i,start+i] = 1
-                c[i,start+i+1] = -1
+                c[i, start+i] = 1
+                c[i, start+i+1] = -1
             C.append(c)
             start += m
         if len(C) > 0:
@@ -372,7 +378,7 @@ class LME:
         up = []
         if uprior is None:
             up = np.array([
-                [-np.inf]*self.k_beta + [1e-8]*self.k_gamma +\
+                [-np.inf]*self.k_beta + [1e-7]*self.k_gamma +\
                     [1e-7]*(k-self.k_beta-self.k_gamma),
                 [np.inf]*k
                 ])
@@ -395,7 +401,8 @@ class LME:
             model_fixed = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
                                  self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,
                                  share_obs_std=share_obs_std, uprior=uprior_fixed)
-            model_fixed.optimize(x0=x0,print_level=inner_print_level,max_iter=inner_max_iter)
+            model_fixed.optimize(x0=x0, print_level=inner_print_level, max_iter=inner_max_iter,
+                                 tol=inner_tol, acceptable_tol=inner_acceptable_tol)
 
             x0 = model_fixed.soln
             self.beta_fixed = model_fixed.beta
@@ -414,6 +421,7 @@ class LME:
         model.fitModel(x0=x0,
                        inner_print_level=inner_print_level,
                        inner_max_iter=inner_max_iter,
+                       inner_acceptable_tol = inner_acceptable_tol,
                        inner_tol=inner_tol,
                        outer_verbose=outer_verbose,
                        outer_max_iter=outer_max_iter,
