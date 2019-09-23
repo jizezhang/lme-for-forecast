@@ -266,13 +266,15 @@ class LME:
                              (self.n_groups, 1)))
         if self.k_gamma > 0:
             self.Z = np.hstack(Z)
+            col_norm = np.linalg.norm(self.Z, axis=0)
             if normalize:
                 print('normalizing Z ...')
-                col_norm = np.linalg.norm(self.Z, axis=0)
                 print(col_norm)
                 self.Z = self.Z/col_norm
+            return col_norm
         else:
             self.Z = np.zeros((self.N, 1))
+            return 0.0
 
     def optimize(self, var=None, S=None, uprior=None, trim_percentage=0.0,
                  share_obs_std=True, fit_fixed=True,inner_print_level=5,
@@ -313,6 +315,8 @@ class LME:
                 Tolerance level for inner optimization.
             inner_verbose (boolean | True, optional):
                 Verbose option for inner optimization.
+            inner_acceptable_tol (float | 1e-4, optional):
+                Acceptable tolerance level for inner optimization.
             outer_verbose (boolean | False, optional):
                 Verbose option for outer optimization.
             outer_max_iter (int | 1, optional):
@@ -323,11 +327,13 @@ class LME:
                 Step size for outer optimization. Used in trimming.
             outer_tol (float | 1e-6, optional):
                 Tolerance level for outer optimization.
+            normalize_Z (bool | False, optional):
+                Whether to normalize Z matrix before optimization.
 
         """
         self.S = S
         self.share_obs_std = share_obs_std
-        self.buildZ(normalize_Z)
+        Z_norm = self.buildZ(normalize_Z)
         k = self.k_beta + self.k_gamma
         if S is None:
             if share_obs_std:
@@ -429,6 +435,8 @@ class LME:
                        outer_tol=outer_tol)
         self.beta_soln = model.beta
         self.gamma_soln = model.gamma
+        if normalize_Z:
+            self.gamma_soln /= Z_norm**2
         self.delta_soln = model.delta
         self.info = model.info
         self.w_soln = model.w
