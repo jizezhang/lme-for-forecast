@@ -279,9 +279,9 @@ class LME:
     def optimize(self, var=None, S=None, uprior=None, trim_percentage=0.0,
                  share_obs_std=True, fit_fixed=True,inner_print_level=5,
                  inner_max_iter=100, inner_tol=1e-5, inner_verbose=True,
-                 inner_acceptable_tol=1e-4,
+                 inner_acceptable_tol=1e-4, inner_nlp_scaling_min_value=1e-8,
                  outer_verbose=False, outer_max_iter=1, outer_step_size=1,
-                 outer_tol=1e-6, normalize_Z=False):
+                 outer_tol=1e-6, normalize_Z=False, random_seed=0):
         """
         Run optimization routine via LimeTr.
 
@@ -317,6 +317,8 @@ class LME:
                 Verbose option for inner optimization.
             inner_acceptable_tol (float | 1e-4, optional):
                 Acceptable tolerance level for inner optimization.
+            inner_nlp_scaling_min_value (float | 1e-8, optional):
+                Min scaling for objective function.
             outer_verbose (boolean | False, optional):
                 Verbose option for outer optimization.
             outer_max_iter (int | 1, optional):
@@ -329,7 +331,9 @@ class LME:
                 Tolerance level for outer optimization.
             normalize_Z (bool | False, optional):
                 Whether to normalize Z matrix before optimization.
-
+            random_seed (int | 0, optional):
+                random seed for choosing an initial point for optimization. If equals 0
+                the initial point is chosen to be a vector of 0.01.
         """
         self.S = S
         self.share_obs_std = share_obs_std
@@ -388,10 +392,19 @@ class LME:
                     [1e-7]*(k-self.k_beta-self.k_gamma),
                 [np.inf]*k
                 ])
+
+            # up = np.array([
+            #     [-np.inf]*self.k_beta + [1e-7]*self.k_gamma + \
+            #         [1e-7]*(k-self.k_beta-self.k_gamma-1) + [.01],
+            #     [np.inf]*(k-1) + [0.01]
+            #     ])
         else:
             up = uprior
 
-        x0 = np.ones(k)*.1
+        x0 = np.ones(k)*.01
+        if random_seed != 0:
+            np.random.seed(random_seed)
+            x0 = np.random.randn(k)*.01
         if var is not None:
             if self.add_re is True:
                 assert len(var) == k
@@ -408,7 +421,8 @@ class LME:
                                  self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,
                                  share_obs_std=share_obs_std, uprior=uprior_fixed)
             model_fixed.optimize(x0=x0, print_level=inner_print_level, max_iter=inner_max_iter,
-                                 tol=inner_tol, acceptable_tol=inner_acceptable_tol)
+                                 tol=inner_tol, acceptable_tol=inner_acceptable_tol,
+                                 nlp_scaling_min_value=inner_nlp_scaling_min_value)
 
             x0 = model_fixed.soln
             self.beta_fixed = model_fixed.beta
@@ -427,7 +441,8 @@ class LME:
         model.fitModel(x0=x0,
                        inner_print_level=inner_print_level,
                        inner_max_iter=inner_max_iter,
-                       inner_acceptable_tol = inner_acceptable_tol,
+                       inner_acceptable_tol=inner_acceptable_tol,
+                       inner_nlp_scaling_min_value=inner_nlp_scaling_min_value,
                        inner_tol=inner_tol,
                        outer_verbose=outer_verbose,
                        outer_max_iter=outer_max_iter,
