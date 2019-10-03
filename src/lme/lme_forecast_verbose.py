@@ -396,7 +396,10 @@ class LME:
                 ])
 
         if self.global_cov_bounds is not None:
-            up[:, 1:len(self.global_ids) + 1] = self.global_cov_bounds
+            if self.global_intercept:
+                up[:, 1:len(self.global_ids) + 1] = self.global_cov_bounds
+            else:
+                up[:, :len(self.global_ids)] = self.global_cov_bounds
 
         x0 = np.ones(k)*.01
         if random_seed != 0:

@@ -50,6 +50,22 @@ class TestLME:
         y = np.random.randn(N)
         assert np.linalg.norm(model.XT(y) - np.transpose(X).dot(y)) < 1e-10
 
+    @pytest.mark.parametrize("bounds", [[0, 1], [-1, 1], [-2, -1]])
+    def test_global_cov_bounds(self, bounds):
+        dimensions = [4, 3, 2, 2]
+        N = np.prod(dimensions)
+        X = np.random.randn(N, 1)
+        beta_true = [-0.6]
+        Y_true = X.dot(beta_true)
+        delta_true = .005
+        Y = Y_true + np.random.randn(N) * np.sqrt(delta_true)
+        model = LME(dimensions, 1, Y, {'cov1': (X[:, 0], [True] * len(dimensions))}, {},
+                    {'cov1': bounds}, False, {})
+        model.optimize(inner_print_level=0)
+        beta_soln = model.beta_soln[0]
+        assert beta_soln >= bounds[0]
+        assert beta_soln <= bounds[1]
+
     def test_post_var_global(self):
         dimensions = [4, 3, 2, 2]
         N = np.prod(dimensions)
