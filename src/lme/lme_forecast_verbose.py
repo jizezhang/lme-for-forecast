@@ -105,8 +105,9 @@ class LME:
                 if there is an age indicator and a sex indicator, it would be
                 {'ind_age':[False, True, False, False],
                  'ind_sex':[False, False, True, False]}
-            global_effects_names (list[str]):
-                A list of covariates names that will be used as global effects.
+            global_effects_names (dict of str: list[float]):
+                A mapping that stores covariates names that will be used as global effects
+                and corresponding bounds on covariate multiplier values.
             global_intercept (boolean):
                 A boolean indicating whether to use an intercept in global effects.
             random_effects (dict of str: list[boolean]):
@@ -185,7 +186,13 @@ class LME:
             err_msg = 'cannot have both global intercept be True and indicators \
                        be non-empty.'
             raise RuntimeError(err_msg)
-        self.global_ids = [self.cov_name_to_id[name] for name in global_effects_names]
+        self.global_ids = [self.cov_name_to_id[name] for name, bounds in global_effects_names.items()]
+        if len(self.global_ids) > 0:
+            self.global_cov_bounds = np.transpose(np.array([bounds for name, bounds in global_effects_names.items()]))
+            assert self.global_cov_bounds.shape[0] == 2
+            assert all(self.global_cov_bounds[1, :] - self.global_cov_bounds[0, :] >= 0)
+        else:
+            self.global_cov_bounds = None
         self.global_intercept = global_intercept
         self.k_beta = len(self.global_ids) + int(self.global_intercept)
         self.indicators = []
@@ -198,7 +205,7 @@ class LME:
             self.indicator_name_to_id[name] = i
             i += 1
 
-        self.beta_names = global_effects_names + list(self.indicator_name_to_id.keys())
+        self.beta_names = list(global_effects_names.keys()) + list(self.indicator_name_to_id.keys())
         if self.global_intercept:
             self.beta_names = ['global_intercept'] + self.beta_names
 
@@ -276,8 +283,8 @@ class LME:
             self.Z = np.zeros((self.N, 1))
             return 0.0
 
-    def optimize(self, var=None, S=None, uprior=None, trim_percentage=0.0,
-                 share_obs_std=True, fit_fixed=True,inner_print_level=5,
+    def optimize(self, var=None, S=None, trim_percentage=0.0,
+                 share_obs_std=True, fit_fixed=True, inner_print_level=5,
                  inner_max_iter=100, inner_tol=1e-5, inner_verbose=True,
                  inner_acceptable_tol=1e-4, inner_nlp_scaling_min_value=1e-8,
                  outer_verbose=False, outer_max_iter=1, outer_step_size=1,
@@ -295,9 +302,6 @@ class LME:
                 each measurement. The size of S should be the same as that of
                 measurements vector. If None standard deviation of measurement
                 will be treated as variables and optimized.
-            uprior (numpy.ndarray | None, optional):
-                Two-dimensional array where one row stores lower bounds for
-                each variable and the other row stores upper bounds.
             trim_percentage (float | 0.0, optional):
                 A float that gives percentage of datapoints to trim.
                 Default is 0, i.e. no trimming.
@@ -383,23 +387,16 @@ class LME:
 
         c = None
         if len(self.constraints) > 0:
-            c = np.zeros((2,self.constraints.shape[0]))
+            c = np.zeros((2, self.constraints.shape[0]))
 
-        up = []
-        if uprior is None:
-            up = np.array([
-                [-np.inf]*self.k_beta + [1e-7]*self.k_gamma +\
+        up = np.array([
+                [-np.inf]*self.k_beta + [1e-7]*self.k_gamma + \
                     [1e-7]*(k-self.k_beta-self.k_gamma),
                 [np.inf]*k
                 ])
 
-            # up = np.array([
-            #     [-np.inf]*self.k_beta + [1e-7]*self.k_gamma + \
-            #         [1e-7]*(k-self.k_beta-self.k_gamma-1) + [.01],
-            #     [np.inf]*(k-1) + [0.01]
-            #     ])
-        else:
-            up = uprior
+        if self.global_cov_bounds is not None:
+            up[:, 1:len(self.global_ids) + 1] = self.global_cov_bounds
 
         x0 = np.ones(k)*.01
         if random_seed != 0:
@@ -416,7 +413,7 @@ class LME:
 
         if var is None or fit_fixed or self.add_re is False:
             uprior_fixed = copy.deepcopy(up)
-            uprior_fixed[:,self.k_beta:self.k_beta+self.k_gamma] = 1e-8
+            uprior_fixed[:, self.k_beta:self.k_beta+self.k_gamma] = 1e-8
             model_fixed = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
                                  self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,
                                  share_obs_std=share_obs_std, uprior=uprior_fixed)
