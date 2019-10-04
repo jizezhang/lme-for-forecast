@@ -155,3 +155,23 @@ class TestLME:
             u2_sample_mean = np.mean(u_samples[1].reshape((-1, n_draws)), axis=1)
             assert np.linalg.norm(u2 - u2_sample_mean)/np.linalg.norm(u2) < .05
         model.outputDraws()
+
+    @pytest.mark.parametrize("bounds", [[-1, 2], [0, 2], [-1, 0], [2, 3]])
+    def test_draw_with_bounds(self, bounds):
+        dimensions = [4, 3, 2, 2]
+        N = np.prod(dimensions)
+        X = np.random.randn(N, 2)
+        beta_true = [1., -0.6]
+        Y_true = X.dot(beta_true)
+        delta_true = .005
+        Y = Y_true + np.random.randn(N) * np.sqrt(delta_true)
+        model = LME(dimensions, 1, Y, {'cov1': (X[:, 0], [True] * len(dimensions)),
+                                       'cov2': (X[:, 1], [True] * len(dimensions))}, {},
+                    {'cov1': bounds, 'cov2': bounds}, False, {})
+        model.optimize(inner_print_level=0)
+        model.postVarGlobal()
+        n_draws = 1000
+        beta_samples = model._drawBeta(n_draws)
+        assert beta_samples.shape[1] == n_draws
+        assert np.all(beta_samples >= bounds[0]) and np.all(beta_samples <= bounds[1])
+

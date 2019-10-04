@@ -389,7 +389,7 @@ class LME:
         if len(self.constraints) > 0:
             c = np.zeros((2, self.constraints.shape[0]))
 
-        up = np.array([
+        self.uprior = np.array([
                 [-np.inf]*self.k_beta + [1e-7]*self.k_gamma + \
                     [1e-7]*(k-self.k_beta-self.k_gamma),
                 [np.inf]*k
@@ -397,9 +397,9 @@ class LME:
 
         if self.global_cov_bounds is not None:
             if self.global_intercept:
-                up[:, 1:len(self.global_ids) + 1] = self.global_cov_bounds
+                self.uprior[:, 1:len(self.global_ids) + 1] = self.global_cov_bounds
             else:
-                up[:, :len(self.global_ids)] = self.global_cov_bounds
+                self.uprior[:, :len(self.global_ids)] = self.global_cov_bounds
 
         x0 = np.ones(k)*.01
         if random_seed != 0:
@@ -415,7 +415,7 @@ class LME:
                 assert len(x0) == k
 
         if var is None or fit_fixed or self.add_re is False:
-            uprior_fixed = copy.deepcopy(up)
+            uprior_fixed = copy.deepcopy(self.uprior)
             uprior_fixed[:, self.k_beta:self.k_beta+self.k_gamma] = 1e-8
             model_fixed = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
                                  self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,
@@ -437,7 +437,7 @@ class LME:
 
         model = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
                        self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1-trim_percentage,
-                       share_obs_std=share_obs_std, uprior=up)
+                       share_obs_std=share_obs_std, uprior=self.uprior)
         model.fitModel(x0=x0,
                        inner_print_level=inner_print_level,
                        inner_max_iter=inner_max_iter,
@@ -504,7 +504,7 @@ class LME:
 
         """
         assert self.k_beta > 0
-        Z_split = np.split(self.Z,self.n_groups)
+        Z_split = np.split(self.Z, self.n_groups)
         Z_split = np.split(np.zeros((self.N, self.k_gamma)), self.n_groups)
 
         self.var_beta = np.zeros((self.k_beta, self.k_beta))
@@ -563,7 +563,7 @@ class LME:
             start += 1
 
         for indicator in self.indicators:
-            X[:,start:start + np.prod(indicator)] = rutils.kronecker(indicator, self.dimensions, 0)
+            X[:, start:start + np.prod(indicator)] = rutils.kronecker(indicator, self.dimensions, 0)
             start += np.prod(indicator)
 
         S2 = []
@@ -583,6 +583,20 @@ class LME:
         beta_samples,gamma_samples = LimeTr.sampleSoln(self.model, sample_size=sample_size, max_iter=max_iter)
         return beta_samples, gamma_samples
 
+    def _drawBeta(self, n_draws):
+        if self.global_cov_bounds is None:
+            return np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
+
+        bounds = self.uprior[:, :self.k_beta]
+        print(bounds)
+        beta_samples = np.empty((self.k_beta, 0), float)
+        while beta_samples.shape[1] < n_draws:
+            samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
+            beta_samples = np.hstack((beta_samples,
+                                      samples[:, np.all((samples - bounds[0, :].reshape((-1, 1)) >= 0) &
+                                                        (samples - bounds[1, :].reshape((-1, 1)) <= 0), axis=0)]))
+        return beta_samples[:, :n_draws]
+
     def draw(self, n_draws=10):
         """
         Draw samples of global effects coefficient beta and random intercepts u
@@ -597,7 +611,7 @@ class LME:
         """
         beta_samples = []
         if self.k_beta > 0:
-            beta_samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
+            beta_samples = self._drawBeta(n_draws)
         u_samples = [[] for _ in range(len(self.ran_list))]
         if self.add_re is True:
             for i in range(self.n_groups):
@@ -608,7 +622,7 @@ class LME:
                     ran_eff = self.ran_list[j]
                     dims = ran_eff[1]
                     # extract u related to random effect j
-                    u_samples[j].append(samples[:,start:start + np.prod(dims[self.n_grouping_dims:])].reshape((n_draws,-1)))
+                    u_samples[j].append(samples[:, start:start + np.prod(dims[self.n_grouping_dims:])].reshape((n_draws, -1)))
                     start += np.prod(dims[self.n_grouping_dims:])
             for i in range(len(u_samples)):
                 # each u_sample is a matrix of dimension n_draws-by-n_groups specific
