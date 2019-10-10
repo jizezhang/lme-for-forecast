@@ -59,8 +59,8 @@ class LME:
 
         Because of the special structure of input data, the matrices
         :math:`X, K` and their Jacobians are not formed explicitly in the
-        implementation, in order to reduce memory usage and to speed up
-        computation. :math:`Z` matrix is also not formed in its full dimensions.
+        implementation, in order to reduce memory usage.
+        :math:`Z` matrix is also not formed in its full dimensions.
         Instead we only pass in its diagonal blocks, since it should have a
         block diagonal structure in general.
 
@@ -223,9 +223,14 @@ class LME:
 
         self.u_names = list(random_effects.keys())
 
+        self.Xm = None
+
         return
 
     def X(self, beta):
+        if self.Xm is not None:
+            return self.Xm.dot(beta)
+
         assert len(beta) == self.k_beta
         y = np.zeros(self.N)
         start = 0
@@ -244,6 +249,9 @@ class LME:
         return y
 
     def XT(self, y):
+        if self.Xm is not None:
+            return np.transpose(self.Xm).dot(y)
+
         assert len(y) == self.N
         start = 0
         val = []
@@ -283,12 +291,41 @@ class LME:
             self.Z = np.zeros((self.N, 1))
             return 0.0
 
+    def _buildX(self):
+        X = np.zeros((self.N, self.k_beta))
+        start = 0
+
+        if self.global_intercept is True:
+            X[:,start] = np.ones(self.N)
+            start += 1
+
+        for i in range(len(self.global_ids)):
+            ind = self.global_ids[i]
+            values, dims = self.covariates[ind]
+            assert values.shape[0] == np.prod(dims)
+            X[:,start] = rutils.repeat(values, dims, self.dimensions)
+            start += 1
+
+        for indicator in self.indicators:
+            X[:, start:start + np.prod(indicator)] = rutils.kronecker(indicator, self.dimensions, 0)
+            start += np.prod(indicator)
+
+        self.Xm = X
+
+    def _solveBeta(self, S):
+        if self.Xm is None:
+            self._buildX()
+        A = np.dot(np.transpose(self.Xm)/S**2, self.Xm)
+        b = np.dot(np.transpose(self.Xm)/S, self.Y)
+        return np.linalg.solve(A, b)
+
+
     def optimize(self, var=None, S=None, trim_percentage=0.0,
                  share_obs_std=True, fit_fixed=True, inner_print_level=5,
                  inner_max_iter=100, inner_tol=1e-5, inner_verbose=True,
                  inner_acceptable_tol=1e-4, inner_nlp_scaling_min_value=1e-8,
                  outer_verbose=False, outer_max_iter=1, outer_step_size=1,
-                 outer_tol=1e-6, normalize_Z=False, random_seed=0):
+                 outer_tol=1e-6, normalize_Z=False, build_X=True, random_seed=0):
         """
         Run optimization routine via LimeTr.
 
@@ -335,6 +372,8 @@ class LME:
                 Tolerance level for outer optimization.
             normalize_Z (bool | False, optional):
                 Whether to normalize Z matrix before optimization.
+            build_X (bool | True, optional):
+                Whether to explicitly build and store X matrix.
             random_seed (int | 0, optional):
                 random seed for choosing an initial point for optimization. If equals 0
                 the initial point is chosen to be a vector of 0.01.
@@ -414,26 +453,36 @@ class LME:
                 x0 = np.append(var, [1e-8])
                 assert len(x0) == k
 
-        if var is None or fit_fixed or self.add_re is False:
+        if build_X:
+            self._buildX()
+        if fit_fixed or self.add_re is False:
             uprior_fixed = copy.deepcopy(self.uprior)
             uprior_fixed[:, self.k_beta:self.k_beta+self.k_gamma] = 1e-8
-            model_fixed = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
-                                 self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,
-                                 share_obs_std=share_obs_std, uprior=uprior_fixed)
-            model_fixed.optimize(x0=x0, print_level=inner_print_level, max_iter=inner_max_iter,
-                                 tol=inner_tol, acceptable_tol=inner_acceptable_tol,
-                                 nlp_scaling_min_value=inner_nlp_scaling_min_value)
+            if S is None or trim_percentage >= 0.01:
+                model_fixed = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
+                                    self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,
+                                    share_obs_std=share_obs_std, uprior=uprior_fixed)
+                model_fixed.optimize(x0=x0, print_level=inner_print_level, max_iter=inner_max_iter,
+                                    tol=inner_tol, acceptable_tol=inner_acceptable_tol,
+                                    nlp_scaling_min_value=inner_nlp_scaling_min_value)
 
-            x0 = model_fixed.soln
-            self.beta_fixed = model_fixed.beta
-            if self.add_re is False:
-                self.beta_soln = self.beta_fixed
-                self.delta_soln = model_fixed.delta
-                self.gamma_soln = model_fixed.gamma
-                self.w_soln = model_fixed.w
-                self.info = model_fixed.info['status_msg']
-                self.yfit_no_random = model_fixed.X(model_fixed.beta)
-                return
+                x0 = model_fixed.soln
+                self.beta_fixed = model_fixed.beta
+                if self.add_re is False:
+                    self.beta_soln = self.beta_fixed
+                    self.delta_soln = model_fixed.delta
+                    self.gamma_soln = model_fixed.gamma
+                    self.w_soln = model_fixed.w
+                    self.info = model_fixed.info['status_msg']
+                    self.yfit_no_random = model_fixed.X(model_fixed.beta)
+                    return
+            else:
+                self.beta_fixed = self._solveBeta(S)
+                x0 = np.append(self.beta_fixed, [1e-8]*self.k_gamma)
+                if self.add_re is False:
+                    self.beta_soln = self.beta_fixed
+                    self.yfit_no_random = self.Xm.dot(self.beta_fixed)
+                    return
 
         model = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
                        self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1-trim_percentage,
@@ -548,23 +597,28 @@ class LME:
     def postVarGlobal(self):
         assert self.k_beta > 0
 
-        X = np.zeros((self.N, self.k_beta))
-        start = 0
+        # X = np.zeros((self.N, self.k_beta))
+        # start = 0
+        #
+        # if self.global_intercept is True:
+        #     X[:,start] = np.ones(self.N)
+        #     start += 1
+        #
+        # for i in range(len(self.global_ids)):
+        #     ind = self.global_ids[i]
+        #     values, dims = self.covariates[ind]
+        #     assert values.shape[0] == np.prod(dims)
+        #     X[:,start] = rutils.repeat(values, dims, self.dimensions)
+        #     start += 1
+        #
+        # for indicator in self.indicators:
+        #     X[:, start:start + np.prod(indicator)] = rutils.kronecker(indicator, self.dimensions, 0)
+        #     start += np.prod(indicator)
 
-        if self.global_intercept is True:
-            X[:,start] = np.ones(self.N)
-            start += 1
+        if self.Xm is None:
+            self._buildX()
 
-        for i in range(len(self.global_ids)):
-            ind = self.global_ids[i]
-            values, dims = self.covariates[ind]
-            assert values.shape[0] == np.prod(dims)
-            X[:,start] = rutils.repeat(values, dims, self.dimensions)
-            start += 1
-
-        for indicator in self.indicators:
-            X[:, start:start + np.prod(indicator)] = rutils.kronecker(indicator, self.dimensions, 0)
-            start += np.prod(indicator)
+        X = self.Xm
 
         S2 = []
         if self.S is None:
