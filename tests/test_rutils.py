@@ -6,8 +6,8 @@ import lme.rutils as rutils
 class TestRUtils:
     """Test for functions in `lme.rutils` """
 
-    @pytest.mark.parametrize("full_dims, dims", [([5, 4, 3, 2], [1, 4, 1, 2]),
-                             ([5, 4, 3, 2], [1, 1, 1, 1]), ([5, 4, 3, 2], [5, 4, 3, 2]),
+    @pytest.mark.parametrize("full_dims, dims", [([5, 4, 1, 2], [1, 4, 1, 2]),
+                             ([5, 4, 3, 2], [1, 1, 1, 1]), ([5, 1, 3, 2], [5, 1, 3, 2]),
                              pytest.param([5, 4, 3, 2], [1, 3, 1, 1], marks=pytest.mark.xfail)])
     def test_repeat_kron(self, full_dims, dims):
         values = np.random.randn(np.prod(dims))

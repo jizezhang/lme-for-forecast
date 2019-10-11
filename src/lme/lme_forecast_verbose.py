@@ -141,9 +141,9 @@ class LME:
             RuntimeError:
                 If the first ``n_grouping_dims`` of a random effect is not all True.
         """
-        if any([d <= 1 for d in dimensions]):
-            err_msg = 'Dimensions should all be > 1.'
-            raise ValueError(err_msg)
+        #if any([d <= 1 for d in dimensions]):
+        #    err_msg = 'Dimensions should all be > 1.'
+        #    raise ValueError(err_msg)
         if n_grouping_dims < 0:
             err_msg = 'n_grouping_dims should be non-negative.'
             raise ValueError(err_msg)
@@ -296,14 +296,14 @@ class LME:
         start = 0
 
         if self.global_intercept is True:
-            X[:,start] = np.ones(self.N)
+            X[:, start] = np.ones(self.N)
             start += 1
 
         for i in range(len(self.global_ids)):
             ind = self.global_ids[i]
             values, dims = self.covariates[ind]
             assert values.shape[0] == np.prod(dims)
-            X[:,start] = rutils.repeat(values, dims, self.dimensions)
+            X[:, start] = rutils.repeat(values, dims, self.dimensions)
             start += 1
 
         for indicator in self.indicators:
