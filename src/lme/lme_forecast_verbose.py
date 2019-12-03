@@ -223,12 +223,12 @@ class LME:
                 err_msg = name + ': the first ' + str(self.n_grouping_dims) + ' must be \
                            True for random effects.'
                 raise RuntimeError(err_msg)
+            dims = bool_to_size(ran_eff)
             if sd is not None:
                 self.use_gprior = True
-                self.ran_eff_gamma_sd.append(sd)
+                self.ran_eff_gamma_sd.extend([sd]*np.prod(dims[self.n_grouping_dims:]))
             else:
-                self.ran_eff_gamma_sd.append(np.inf)
-            dims = bool_to_size(ran_eff)
+                self.ran_eff_gamma_sd.extend([np.inf]*np.prod(dims[self.n_grouping_dims:]))
             if name in self.cov_name_to_id:
                 self.ran_list.append((self.cov_name_to_id[name], dims))
             else:
@@ -455,6 +455,7 @@ class LME:
 
         self.gprior = None
         if self.use_gprior:
+            assert len(self.ran_eff_gamma_sd) == self.k_gamma
             self.gprior = np.array([[0]*k, [np.inf]*self.k_beta + self.ran_eff_gamma_sd
                                     + [np.inf]*(k-self.k_beta-self.k_gamma)])
 
@@ -660,7 +661,7 @@ class LME:
             return np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))
 
         bounds = self.uprior[:, :self.k_beta]
-        print(bounds)
+        #print(bounds)
         beta_samples = np.empty((self.k_beta, 0), float)
         while beta_samples.shape[1] < n_draws:
             samples = np.transpose(np.random.multivariate_normal(self.beta_soln, self.var_beta, n_draws))

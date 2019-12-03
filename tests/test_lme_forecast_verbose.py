@@ -93,12 +93,11 @@ class TestLME:
         varmat2 = model.var_beta
         assert np.linalg.norm(varmat1 - varmat2) < 1e-10
 
-    #@pytest.mark.parametrize("random_effect", [[[9, 1, 2, 1]], [[9, 3, 1, 1]], [[9, 1, 1, 1]]])
-    @pytest.mark.parametrize("random_effect", [[200, 1]])
+    @pytest.mark.parametrize("random_effect", [[200, 1, 1, 1], [200, 2, 1, 1], [200, 1, 3, 1]])
     @pytest.mark.parametrize("sd", [.05, .1, .5])
     def test_random_effect_with_gaussian_prior(self, random_effect, sd):
         np.random.seed(127)
-        dimensions = [200, 2]
+        dimensions = [200, 2, 3, 2]
         N = np.prod(dimensions)
         Y_true = np.zeros(N)
         Z = rutils.kronecker(random_effect, dimensions, 0)
@@ -119,7 +118,7 @@ class TestLME:
         model2.optimize(inner_print_level=0)
         gamma2 = model2.gamma_soln
         u_var2 = np.var(model2.u_soln)
-        assert gamma1 > gamma2
+        assert all(gamma1 > gamma2)
         assert u_var1 > u_var2
 
     @pytest.mark.parametrize("random_effects", [[[9, 1, 2, 1], [9, 3, 1, 1]], [[9, 1, 1, 1], [9, 1, 2, 1]]])
