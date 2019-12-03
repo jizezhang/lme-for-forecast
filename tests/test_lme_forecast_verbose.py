@@ -11,7 +11,10 @@ class TestLME:
     @pytest.mark.parametrize("dimensions", [[5, 4, 3, 2], [5, 4, 1, 2]])
     @pytest.mark.parametrize("random_intercept", [[5, 4, 1, 1], [5, 1, 1, 1], [5, 1, 1, 2]])
     def test_random_intercept(self, dimensions, random_intercept):
-        dct = {'intercept': [random_intercept[j] == dimensions[j] for j in range(len(dimensions))]}
+        """
+        Test if random intercept matrix is built correctly.
+        """
+        dct = {'intercept': ([random_intercept[j] == dimensions[j] for j in range(len(dimensions))], None)}
 
         y = np.random.randn(np.prod(dimensions))
         model = LME(dimensions, 1, y, {}, {}, {}, True, dct)
@@ -22,6 +25,9 @@ class TestLME:
     @pytest.mark.parametrize("dimensions", [[5, 4, 3, 2], [5, 4, 1, 2]])
     @pytest.mark.parametrize("indicator", [[5, 1, 1, 2], [1, 4, 1, 1], [1, 1, 1, 1]])
     def test_indicators(self, dimensions, indicator):
+        """
+        Test if indicator matrix is built correctly.
+        """
         dct = {'intercept': [indicator[j] == dimensions[j] for j in range(len(dimensions))]}
 
         y = np.random.randn(np.prod(dimensions))
@@ -87,6 +93,35 @@ class TestLME:
         varmat2 = model.var_beta
         assert np.linalg.norm(varmat1 - varmat2) < 1e-10
 
+    #@pytest.mark.parametrize("random_effect", [[[9, 1, 2, 1]], [[9, 3, 1, 1]], [[9, 1, 1, 1]]])
+    @pytest.mark.parametrize("random_effect", [[200, 1]])
+    @pytest.mark.parametrize("sd", [.05, .1, .5])
+    def test_random_effect_with_gaussian_prior(self, random_effect, sd):
+        np.random.seed(127)
+        dimensions = [200, 2]
+        N = np.prod(dimensions)
+        Y_true = np.zeros(N)
+        Z = rutils.kronecker(random_effect, dimensions, 0)
+        u = np.random.randn(np.prod(random_effect))*.5
+        dct1 = {'intercept': ([random_effect[j] == dimensions[j] for j in range(len(dimensions))], None)}
+        dct2 = {'intercept': ([random_effect[j] == dimensions[j] for j in range(len(dimensions))], sd)}
+        delta_true = 0.005
+        Y_true += Z.dot(u)
+        Y = Y_true + np.random.randn(N) * np.sqrt(delta_true)
+        model1 = LME(dimensions, 1, Y, {},
+                    {}, {}, False, random_effects=dct1)
+        model1.optimize(inner_print_level=0)
+        gamma1 = model1.gamma_soln
+        u_var1 = np.var(model1.u_soln)
+
+        model2 = LME(dimensions, 1, Y, {},
+                     {}, {}, False, random_effects=dct2)
+        model2.optimize(inner_print_level=0)
+        gamma2 = model2.gamma_soln
+        u_var2 = np.var(model2.u_soln)
+        assert gamma1 > gamma2
+        assert u_var1 > u_var2
+
     @pytest.mark.parametrize("random_effects", [[[9, 1, 2, 1], [9, 3, 1, 1]], [[9, 1, 1, 1], [9, 1, 2, 1]]])
     def test_draw_random_only(self, random_effects):
         np.random.seed(127)
@@ -98,7 +133,7 @@ class TestLME:
             Z = rutils.kronecker(effect, dimensions, 0)
             u = np.random.randn(np.prod(effect))
             Y_true += Z.dot(u)
-            dct['intercept'+str(i)] = [effect[j] == dimensions[j] for j in range(len(dimensions))]
+            dct['intercept'+str(i)] = ([effect[j] == dimensions[j] for j in range(len(dimensions))], None)
         delta_true = .005
         Y = Y_true + np.random.randn(N)*np.sqrt(delta_true)
         model = LME(dimensions, 1, Y, {},
@@ -135,7 +170,7 @@ class TestLME:
             Z = rutils.kronecker(effect, dimensions, 0)
             u = np.random.randn(np.prod(effect))
             Y_true += Z.dot(u)
-            dct['intercept'+str(i)] = [effect[j] == dimensions[j] for j in range(len(dimensions))]
+            dct['intercept'+str(i)] = ([effect[j] == dimensions[j] for j in range(len(dimensions))], None)
         delta_true = .005
         Y = Y_true + np.random.randn(N)*np.sqrt(delta_true)
         model = LME(dimensions, 1, Y, {'cov': (X[:, 1], [True]*len(dimensions))},

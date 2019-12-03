@@ -110,15 +110,19 @@ class LME:
                 and corresponding bounds on covariate multiplier values.
             global_intercept (boolean):
                 A boolean indicating whether to use an intercept in global effects.
-            random_effects (dict of str: list[boolean]):
+            random_effects (dict of str: (list[boolean], float)):
                 A mapping that stores info of random effects. Key is the name of
-                covariate or of intercept, and value is a boolean list specifying
-                dimensions on which to impose random effects, e.g. if we want to
-                know random slope of covariate 'haq' per location-age,
-                { 'haq': [True, True, False, False]},
-                if we want to add a random intercept on location, then
-                { 'haq': [True, True, False, False],
-                  'intercept_loc': [True, False, False, False]}.
+                covariate or of intercept, and value is a tuple whose first element
+                is a boolean list specifying dimensions on which to impose random effects,
+                and the second is a value for standard deviation of the gaussian prior
+                on random effects variance. When no prior it can be set to None.
+                e.g. if we want to know random slope of covariate 'haq' per location-age,
+                with a gaussian prior with sd of 0.1, then
+                { 'haq': ([True, True, False, False], 0.1)},
+                if we also want to add a random intercept on location, with no gaussian prior,
+                then
+                { 'haq': ([True, True, False, False], 0.1),
+                  'intercept_loc': ([True, False, False, False], None)}.
                 Any name that does not appear in ``covariates`` will be interpreted
                 as name for an intercept. Note that the first ``n_grouping_dims``
                 of the boolean list must always be True for all random effects.
@@ -210,11 +214,20 @@ class LME:
             self.beta_names = ['global_intercept'] + self.beta_names
 
         self.ran_list = []
-        for name, ran_eff in random_effects.items():
+        self.ran_eff_gamma_sd = []
+        self.use_gprior = False
+        for name, ran_eff_info in random_effects.items():
+            ran_eff = ran_eff_info[0]
+            sd = ran_eff_info[1]
             if not all(ran_eff[:self.n_grouping_dims]):
                 err_msg = name + ': the first ' + str(self.n_grouping_dims) + ' must be \
                            True for random effects.'
                 raise RuntimeError(err_msg)
+            if sd is not None:
+                self.use_gprior = True
+                self.ran_eff_gamma_sd.append(sd)
+            else:
+                self.ran_eff_gamma_sd.append(np.inf)
             dims = bool_to_size(ran_eff)
             if name in self.cov_name_to_id:
                 self.ran_list.append((self.cov_name_to_id[name], dims))
@@ -440,6 +453,11 @@ class LME:
             else:
                 self.uprior[:, :len(self.global_ids)] = self.global_cov_bounds
 
+        self.gprior = None
+        if self.use_gprior:
+            self.gprior = np.array([[0]*k, [np.inf]*self.k_beta + self.ran_eff_gamma_sd
+                                    + [np.inf]*(k-self.k_beta-self.k_gamma)])
+
         x0 = np.ones(k)*.01
         if random_seed != 0:
             np.random.seed(random_seed)
@@ -486,7 +504,7 @@ class LME:
 
         model = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
                        self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1-trim_percentage,
-                       share_obs_std=share_obs_std, uprior=self.uprior)
+                       share_obs_std=share_obs_std, uprior=self.uprior, gprior=self.gprior)
         model.fitModel(x0=x0,
                        inner_print_level=inner_print_level,
                        inner_max_iter=inner_max_iter,
