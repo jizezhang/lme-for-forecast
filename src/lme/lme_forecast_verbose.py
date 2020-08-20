@@ -478,9 +478,21 @@ class LME:
             uprior_fixed = copy.deepcopy(self.uprior)
             uprior_fixed[:, self.k_beta:self.k_beta+self.k_gamma] = 1e-8
             if S is None or trim_percentage >= 0.01:
-                model_fixed = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
-                                    self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1.-trim_percentage,
-                                    share_obs_std=share_obs_std, uprior=uprior_fixed)
+                model_fixed = LimeTr(
+                    self.grouping, 
+                    int(self.k_beta), 
+                    int(self.k_gamma), 
+                    self.Y, 
+                    lambda b: np.dot(self.X, b), 
+                    lambda b: self.XT,
+                    self.Z, 
+                    S=S, 
+                    C=C, 
+                    JC=JC, 
+                    c=c, 
+                    inlier_percentage=1.-trim_percentage,
+                    share_obs_std=share_obs_std, uprior=uprior_fixed
+                )
                 model_fixed.optimize(x0=x0, print_level=inner_print_level, max_iter=inner_max_iter,
                                     tol=inner_tol, acceptable_tol=inner_acceptable_tol,
                                     nlp_scaling_min_value=inner_nlp_scaling_min_value)
@@ -503,19 +515,35 @@ class LME:
                     self.yfit_no_random = self.Xm.dot(self.beta_fixed)
                     return
 
-        model = LimeTr(self.grouping, int(self.k_beta), int(self.k_gamma), self.Y, self.X, self.XT,
-                       self.Z, S=S, C=C, JC=JC, c=c, inlier_percentage=1-trim_percentage,
-                       share_obs_std=share_obs_std, uprior=self.uprior, gprior=self.gprior)
-        model.fitModel(x0=x0,
-                       inner_print_level=inner_print_level,
-                       inner_max_iter=inner_max_iter,
-                       inner_acceptable_tol=inner_acceptable_tol,
-                       inner_nlp_scaling_min_value=inner_nlp_scaling_min_value,
-                       inner_tol=inner_tol,
-                       outer_verbose=outer_verbose,
-                       outer_max_iter=outer_max_iter,
-                       outer_step_size=outer_step_size,
-                       outer_tol=outer_tol)
+        model = LimeTr(
+            self.grouping, 
+            int(self.k_beta), 
+            int(self.k_gamma), 
+            self.Y, 
+            lambda b: np.dot(self.X, b), 
+            lambda b: self.XT,
+            self.Z, 
+            S=S, 
+            C=C, 
+            JC=JC, 
+            c=c, 
+            inlier_percentage=1-trim_percentage,
+            share_obs_std=share_obs_std, 
+            uprior=self.uprior, 
+            gprior=self.gprior
+        )
+        model.fitModel(
+            x0=x0,
+            inner_print_level=inner_print_level,
+            inner_max_iter=inner_max_iter,
+            inner_acceptable_tol=inner_acceptable_tol,
+            inner_nlp_scaling_min_value=inner_nlp_scaling_min_value,
+            inner_tol=inner_tol,
+            outer_verbose=outer_verbose,
+            outer_max_iter=outer_max_iter,
+            outer_step_size=outer_step_size,
+            outer_tol=outer_tol
+        )
         self.beta_soln = model.beta
         self.gamma_soln = model.gamma
         if normalize_Z:
