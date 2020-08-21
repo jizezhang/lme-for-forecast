@@ -261,6 +261,11 @@ class LME:
             start += np.prod(indicator)
         return y
 
+    def JX(self, beta):
+        if self.Xm is None:
+            self._buildX()
+        return self.Xm
+
     def XT(self, y):
         if self.Xm is not None:
             return np.transpose(self.Xm).dot(y)
@@ -484,7 +489,7 @@ class LME:
                     int(self.k_gamma), 
                     self.Y, 
                     self.X,
-                    self.XT,
+                    self.JX,
                     self.Z, 
                     S=S, 
                     C=C, 
@@ -521,7 +526,7 @@ class LME:
             int(self.k_gamma), 
             self.Y, 
             self.X, 
-            self.XT,
+            self.JX,
             self.Z, 
             S=S, 
             C=C, 
