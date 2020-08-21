@@ -510,7 +510,7 @@ class LME:
                     self.gamma_soln = model_fixed.gamma
                     self.w_soln = model_fixed.w
                     self.info = model_fixed.info['status_msg']
-                    self.yfit_no_random = model_fixed.X(model_fixed.beta)
+                    self.yfit_no_random = model_fixed.F(model_fixed.beta)
                     return
             else:
                 self.beta_fixed = self._solveBeta(S)
