@@ -560,7 +560,7 @@ class LME:
         self.solve_status = model.info['status']
         self.solve_status_msg = model.info['status_msg']
 
-        self.yfit_no_random = model.X(model.beta)
+        self.yfit_no_random = model.F(model.beta)
 
         self.yfit = []
         Z_split = np.split(self.Z,self.n_groups)
